@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>openchat</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="titlebar">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="6" cy="12" r="3.2"></circle>
+          <circle cx="18" cy="12" r="3.2"></circle>
+          <path d="M9.4 12h5.2" ></path>
+          <path d="M12.6 9.6 15 12l-2.4 2.4"></path>
+        </svg>
+        <span class="brand-name">openchat</span>
+        <span class="brand-sub">会话接续</span>
+      </div>
+      <div class="titlebar-actions">
+        <button class="icon-btn" id="refresh" title="刷新（Ctrl+R）" aria-label="刷新">
+          <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 4v7h-7"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <section class="side-section">
+        <h2 class="side-title">来源</h2>
+        <ul class="side-list" id="agent-filter"></ul>
+      </section>
+      <section class="side-section grow">
+        <h2 class="side-title">项目</h2>
+        <ul class="side-list" id="project-filter"></ul>
+      </section>
+      <div class="side-foot" id="side-foot"></div>
+    </aside>
+
+    <section class="list-pane">
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+        <input id="search" type="search" placeholder="搜索标题、目录或 ID" autocomplete="off" spellcheck="false">
+        <kbd>/</kbd>
+      </div>
+      <div class="list-meta" id="list-meta"></div>
+      <ul class="session-list" id="session-list" tabindex="0"></ul>
+    </section>
+
+    <main class="detail" id="detail">
+      <div class="empty" id="empty">
+        <div class="empty-art" aria-hidden="true">
+          <span class="node a"></span><span class="wire"></span><span class="node b"></span>
+        </div>
+        <h1>选一个会话，接着聊</h1>
+        <p>左边列出了本机所有编程 agent 的会话。选中一个，再选目标 agent，它会被转换成目标的原生会话，打开就能继续。</p>
+      </div>
+
+      <div class="detail-body" id="detail-body" hidden>
+        <div class="detail-head">
+          <div class="detail-kicker" id="d-kicker"></div>
+          <h1 class="detail-title" id="d-title"></h1>
+          <div class="chips" id="d-chips"></div>
+        </div>
+
+        <section class="relay" aria-label="接续到">
+          <div class="relay-head">
+            <h2>接续到</h2>
+            <span class="relay-hint" id="relay-hint">写入目标 agent 自己的会话格式，历史就是真实的对话</span>
+          </div>
+          <div class="targets" id="targets" role="radiogroup"></div>
+          <div class="relay-options">
+            <label class="check">
+              <input type="checkbox" id="opt-launch" checked>
+              <span>转换后在新终端中打开</span>
+            </label>
+            <label class="model" id="model-row" hidden>
+              <span>续聊模型</span>
+              <select id="opt-model"><option value="">自动选择</option></select>
+            </label>
+            <button class="primary" id="convert" disabled>
+              <span id="convert-label">选择目标</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13"></path><path d="m13 6 6 6-6 6"></path></svg>
+            </button>
+          </div>
+          <div class="result" id="result" hidden></div>
+        </section>
+
+        <section class="transcript" aria-label="会话内容">
+          <div class="transcript-head">
+            <h2>会话内容</h2>
+            <span id="t-count"></span>
+          </div>
+          <div id="transcript"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "openchat",
+  "version": "0.1.0",
+  "description": "Hand off coding-agent sessions between Claude Code, Codex, Grok, Qwen Code and Gemini CLI",
+  "type": "module",
+  "bin": {
+    "openchat": "bin/openchat.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "desktop": "electron ."
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.9.0"
+  },
+  "main": "desktop/main.js"
+}
