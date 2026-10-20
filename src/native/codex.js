@@ -31,7 +31,7 @@ export function writeCodexSession(session, sourceLabel, { cwd }) {
     id,
     timestamp: now.toISOString(),
     cwd,
-    originator: 'openchat',
+    originator: 'sharechat',
     cli_version: '0.0.0',
     source: 'cli',
     model_provider: null,
@@ -52,7 +52,7 @@ export function writeCodexSession(session, sourceLabel, { cwd }) {
     bytes += Buffer.byteLength(m.text);
     if (m.role === 'user') {
       close(null);
-      open = { id: `openchat-import-turn-${++turn}`, started: ts };
+      open = { id: `sharechat-import-turn-${++turn}`, started: ts };
       add(ts, 'event_msg', { type: 'task_started', turn_id: open.id, started_at: secs(ts), model_context_window: null });
       add(ts, 'event_msg', { type: 'user_message', message: m.text });
       add(ts, 'response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: m.text }] });

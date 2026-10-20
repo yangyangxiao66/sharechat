@@ -38,7 +38,7 @@ export function flatten(session, sourceLabel) {
       push('assistant', r.parts.map((p) => (p.type === 'text' ? p.text : toolNote(p))).join('\n\n'), r.ts);
     }
   }
-  const note = `[本会话由 openchat 从 ${sourceLabel} 导入（原会话 ID ${session.id}）。之前的工具调用由原来的助手执行，文件请以磁盘当前状态为准。]`;
+  const note = `[本会话由 sharechat 从 ${sourceLabel} 导入（原会话 ID ${session.id}）。之前的工具调用由原来的助手执行，文件请以磁盘当前状态为准。]`;
   if (msgs[0]?.role === 'user') msgs[0].text = `${note}\n\n${msgs[0].text}`;
   else msgs.unshift({ role: 'user', text: note });
   return msgs;

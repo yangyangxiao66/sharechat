@@ -1,0 +1,179 @@
+/* Match sharechat's original surfaces; terminal text keeps its selected skin. */
+:root {
+  --sc-bg: #f4f2ee;
+  --sc-panel: #fbfaf7;
+  --sc-raised: #ffffff;
+  --sc-ink: #1d1e22;
+  --sc-secondary: #55575f;
+  --sc-muted: #8a8c94;
+  --sc-line: #e4e0d8;
+  --sc-border: #d6d1c6;
+  --sc-hover: #ece8e0;
+  --sc-selected: #e6e1d6;
+  --sc-ok: #2f7d55;
+  --sc-scheme: light;
+  --studio-canvas: var(--sc-bg);
+  --studio-sidebar: var(--sc-bg);
+  --studio-panel: var(--sc-panel);
+  --studio-panel-soft: var(--sc-hover);
+  --studio-ink: var(--sc-ink);
+  --studio-ink-muted: var(--sc-secondary);
+  --studio-ink-soft: var(--sc-muted);
+  --studio-line: var(--sc-line);
+  --studio-line-strong: var(--sc-border);
+  --studio-accent: var(--sc-ok);
+  --studio-accent-hover: var(--sc-ok);
+  --studio-accent-soft: var(--sc-hover);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sc-bg: #16171b;
+    --sc-panel: #1b1c21;
+    --sc-raised: #222329;
+    --sc-ink: #e7e8ec;
+    --sc-secondary: #a9abb4;
+    --sc-muted: #74767f;
+    --sc-line: #2a2b31;
+    --sc-border: #34353c;
+    --sc-hover: #24252b;
+    --sc-selected: #2b2c33;
+    --sc-ok: #5cc28d;
+    --sc-scheme: dark;
+  }
+}
+
+body {
+  font-family: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+}
+
+body :is(.studio-sidebar, .toolbar, .workspace-settings, .ssh-dialog, .skin-shop, .context-menu, .status-bar, .pane-header) {
+  color-scheme: var(--sc-scheme);
+  --bg-toolbar: var(--sc-bg);
+  --bg-control: var(--sc-raised);
+  --bg-menu: var(--sc-panel);
+  --text: var(--sc-ink);
+  --text-muted: var(--sc-secondary);
+  --text-soft: var(--sc-muted);
+  --text-path: var(--sc-secondary);
+  --border: var(--sc-line);
+  --border-strong: var(--sc-border);
+  --menu-hover: var(--sc-hover);
+  --menu-border: var(--sc-border);
+  --menu-sep: var(--sc-line);
+  --accent: var(--sc-ok);
+  --accent-soft: var(--sc-ok);
+  --accent-bright: var(--sc-ok);
+  --accent-active-bg: var(--sc-selected);
+}
+
+body .studio-shell > .studio-sidebar,
+body .studio-terminal-workspace > .toolbar,
+body .studio-terminal-workspace > .status-bar {
+  color: var(--sc-secondary);
+  background: var(--sc-bg);
+  border-color: var(--sc-line);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+.studio-brand-mark {
+  color: var(--sc-panel);
+  background: var(--sc-ink);
+  box-shadow: none;
+  border-radius: 8px;
+}
+.studio-brand-copy small,
+.studio-project-copy small { color: var(--sc-muted); }
+.studio-project-copy strong { color: var(--sc-ink); }
+.studio-project > i,
+.studio-group-heading,
+.studio-git-control .label,
+.studio-git-control .git-branch-label-row i,
+.studio-footer-action { color: var(--sc-secondary); }
+.studio-project:hover,
+.studio-project.is-current {
+  background: var(--sc-selected);
+  border-color: var(--sc-border);
+  border-radius: 8px;
+}
+.studio-git-control select {
+  color: var(--sc-ink);
+  background: var(--sc-raised);
+  border-color: var(--sc-border);
+  border-radius: 7px;
+}
+.studio-footer-action:hover { background: var(--sc-hover); color: var(--sc-ink); }
+.studio-host-group { border-color: var(--sc-line); }
+.studio-live-dot { box-shadow: none; }
+
+body .studio-terminal-workspace .ghost-button {
+  color: var(--sc-secondary);
+  background: var(--sc-raised);
+  border-color: var(--sc-border);
+  border-radius: 7px;
+  box-shadow: none;
+}
+body .studio-terminal-workspace .ghost-button:hover {
+  background: var(--sc-hover);
+  color: var(--sc-ink);
+}
+body .studio-terminal-workspace .primary-button {
+  color: var(--sc-panel);
+  background: var(--sc-ink);
+  border-color: var(--sc-ink);
+  border-radius: 7px;
+  box-shadow: none;
+}
+body .studio-terminal-workspace .primary-button:hover { opacity: 0.88; }
+
+body .terminal-pane .pane-header,
+body .terminal-pane:not(.active) .pane-header {
+  color: var(--sc-ink);
+  background: var(--sc-panel);
+  border-bottom-color: var(--sc-line);
+}
+.pane-path { color: var(--sc-muted); }
+.pane-index { color: var(--sc-secondary); }
+.terminal-pane.active .pane-index { color: var(--sc-ok); text-shadow: none; }
+
+.workspace-settings { color: var(--sc-ink); }
+.workspace-settings-panel {
+  color: var(--sc-ink);
+  background: var(--sc-panel);
+  border-color: var(--sc-border);
+  box-shadow: -12px 0 36px rgb(30 25 15 / 10%);
+}
+.workspace-settings-header,
+.workspace-settings-section { border-color: var(--sc-line); }
+.workspace-settings-header p,
+.workspace-settings-section h3,
+.workspace-settings small { color: var(--sc-muted); }
+.workspace-settings-header .icon-button,
+.workspace-settings-field,
+.workspace-settings-action { color: var(--sc-ink); }
+.workspace-settings select {
+  color: var(--sc-ink);
+  background: var(--sc-raised);
+  border-color: var(--sc-border);
+}
+.workspace-settings-action:hover {
+  background: var(--sc-hover);
+  border-color: var(--sc-line);
+}
+.workspace-settings-action > i:first-child,
+.workspace-settings-action > i:last-child:not(:first-child),
+.workspace-settings-glass output { color: var(--sc-secondary); }
+.workspace-settings-glass input { accent-color: var(--sc-ok); }
+.settings-toggle { background: var(--sc-border); }
+.settings-toggle::after { background: var(--sc-muted); }
+[aria-pressed="true"] > .settings-toggle { background: var(--sc-ok); }
+[aria-pressed="true"] > .settings-toggle::after { background: var(--sc-raised); }
+.agent-mcp-menu,
+.agent-mcp-menu button { color: var(--sc-ink); background: var(--sc-panel); border-color: var(--sc-line); }
+.agent-mcp-menu button:hover { background: var(--sc-hover); }
+
+/* Keep the welcome content and character animation on the terminal skin. */
+body .empty-state {
+  color: var(--text);
+}

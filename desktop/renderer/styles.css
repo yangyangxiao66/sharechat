@@ -95,6 +95,22 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
 .brand-name { font-weight: 650; letter-spacing: -0.01em; }
 .brand-sub { color: var(--ink-3); font-size: 12px; padding-left: 8px; border-left: 1px solid var(--line-2); }
 .titlebar-actions { -webkit-app-region: no-drag; }
+.workspace-nav { display: flex; gap: 4px; align-self: stretch; align-items: center; -webkit-app-region: no-drag; }
+.workspace-nav button {
+  height: 30px; padding: 0 14px; border: 1px solid transparent;
+  border-radius: 6px; background: transparent; color: var(--ink-3); cursor: pointer;
+  font-size: 12px; font-weight: 600;
+}
+.workspace-nav button:hover { background: var(--hover); color: var(--ink); }
+.workspace-nav button.active { background: var(--select); color: var(--ink); border-color: var(--line-2); }
+.workspace-nav button:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+body[data-view="terminal"] .app > .sidebar,
+body[data-view="terminal"] .app > .list-pane,
+body[data-view="terminal"] .app > .detail { display: none; }
+.terminal-host-placeholder {
+  grid-column: 1 / -1; grid-row: 2; display: grid; place-items: center;
+  min-height: 0; background: var(--bg); color: var(--ink-3);
+}
 .icon-btn {
   display: grid; place-items: center;
   width: 30px; height: 30px; border-radius: 8px;

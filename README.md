@@ -1,43 +1,54 @@
-# openchat
+# sharechat
 
 在不同编程 agent 之间一键切换会话，不丢上下文。比如 Claude 额度用完了，在项目目录里运行：
 
 ```bash
-openchat switch codex
+sharechat switch codex
 ```
 
 它会找到当前目录最近的一次会话（来自任意其他 agent），转成 Codex 自己的会话格式，然后执行 `codex resume <新会话ID>`。Codex 打开后，之前的每一轮对话都是真实的历史消息，可以直接接着聊。
 
-支持 Claude Code、Codex、Qwen Code、Gemini CLI、OpenCode、Grok Build。零依赖，Node.js ≥ 18。
+支持 Claude Code、Codex、Qwen Code、Gemini CLI、OpenCode、Grok Build。会话转换核心零依赖，Node.js ≥ 22.15。
 
 ## 安装
 
 ```bash
-cd G:\openchat
-npm link        # 之后任何目录都能用 openchat
+cd G:\sharechat
+npm link        # 之后任何目录都能用 sharechat
 ```
 
 ## 桌面端
 
 ```bash
 npm install          # 首次安装 Electron；GitHub 下载慢可以先设 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+npm run setup        # 首次下载 Electron 运行程序
 npm run desktop
 ```
 
-界面分三栏：左边按来源 agent 和项目筛选，中间是会话列表，右边是会话预览和“接续到”面板。选中一个会话，选好目标 agent，点“转换到 …”，会话就会被写成目标 agent 的原生会话，并在新终端里执行它的 resume 命令。也可以取消“在新终端中打开”，只做转换，然后复制命令自己运行。
+顶部可切换「会话接续 / 终端矩阵」。会话接续保留三栏：来源和项目筛选、会话列表、内容预览及接续面板。选中会话并转换后，会在 sharechat 内置的终端矩阵里创建新终端，执行目标 Agent 的 resume 命令。也可以取消「转换后在内置终端中打开」，只转换并复制命令。
 
-快捷键：`/` 搜索，`↑` `↓` 切换会话，`Ctrl+R` 刷新，`Ctrl+Enter` 转换。界面跟随系统深浅色，也可以用 `OPENCHAT_THEME=dark` 或 `light` 强制指定。
+终端矩阵支持多终端并行、标签页、Git 分支、SSH、皮肤、字符动效及设置抽屉。切回会话接续时，终端进程继续运行；关闭 sharechat 窗口会释放内置终端和 SSH 连接。历史会话扫描在后台线程完成。终端源码来自 terminal 项目，详见 `modules/terminal/UPSTREAM.md`。
+
+```bash
+npm start       # 启动整合后的 sharechat
+npm run check   # 语法检查
+npm test        # 会话格式和接续命令测试
+```
+
+命令行入口已改名为 `sharechat`，仍保留 `openchat` 命令别名与旧缓存目录兼容。
+
+快捷键：`/` 搜索，`↑` `↓` 切换会话，`Ctrl+R` 刷新，`Ctrl+Enter` 转换。界面跟随系统深浅色，也可以用 `SHARECHAT_THEME=dark` 或 `light` 强制指定。
 
 ## 命令行用法
 
 ```bash
-openchat switch codex                  # 当前目录最近的会话 → Codex
-openchat switch claude --from codex    # 只从 Codex 的会话里找
-openchat switch qwen -s 3              # 指定会话（编号来自 openchat list）
-openchat switch codex --no-launch      # 只转换，打印启动命令
+sharechat switch codex                  # 当前目录最近的会话 → Codex
+sharechat switch claude --from codex    # 只从 Codex 的会话里找
+sharechat switch qwen -s 3              # 指定会话（编号来自 sharechat list）
+sharechat switch codex --no-launch      # 只转换，打印启动命令
 
-openchat list --here                   # 当前目录下所有 agent 的会话
-openchat handoff codex:01a116 --to claude   # 转换任意会话，在原会话目录打开
+sharechat list --here                   # 当前目录下所有 agent 的会话
+sharechat handoff codex:01a116 --to claude   # 转换任意会话，在原会话目录打开
 ```
 
 ## 切换方式

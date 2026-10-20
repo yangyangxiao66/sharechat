@@ -1,12 +1,14 @@
 import { app, BrowserWindow, ipcMain, nativeTheme, shell, clipboard } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentInfo, listSessions, loadSession, convertSession, openInTerminal, commandLine } from '../src/core.js';
-import { summarizeInput } from '../src/render.js';
-import { clip, runCli } from '../src/util.js';
+import { commandLine } from '../src/core.js';
+import { TerminalHost } from './terminal-host.js';
+import { sessionTask, stopSessionTasks } from './session-tasks.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const MAX_PREVIEW = 400;
+app.setName('sharechat');
+let mainWindow = null;
+let terminalHost = null;
 
 const overlay = () => (nativeTheme.shouldUseDarkColors
   ? { color: '#16171b', symbolColor: '#c9cbd3', height: 44 }
@@ -14,11 +16,12 @@ const overlay = () => (nativeTheme.shouldUseDarkColors
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1320,
-    height: 840,
+    width: 1500,
+    height: 920,
     minWidth: 980,
     minHeight: 600,
-    title: 'openchat',
+    title: 'sharechat',
+    autoHideMenuBar: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#16171b' : '#f4f2ee',
     titleBarStyle: 'hidden',
     titleBarOverlay: process.platform === 'darwin' ? undefined : overlay(),
@@ -30,8 +33,19 @@ function createWindow() {
       sandbox: true,
     },
   });
-  nativeTheme.on('updated', () => {
-    if (process.platform !== 'darwin') win.setTitleBarOverlay(overlay());
+  mainWindow = win;
+  terminalHost = new TerminalHost(win, mode => {
+    if (!win.isDestroyed()) win.webContents.send('workspace:view', mode);
+  });
+  const updateTheme = () => {
+    if (!win.isDestroyed() && process.platform !== 'darwin') win.setTitleBarOverlay(overlay());
+  };
+  nativeTheme.on('updated', updateTheme);
+  win.on('closed', () => {
+    terminalHost?.dispose();
+    terminalHost = null;
+    mainWindow = null;
+    nativeTheme.removeListener('updated', updateTheme);
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -40,12 +54,13 @@ function createWindow() {
   win.loadFile(path.join(here, 'renderer', 'index.html'));
 
   // Dev aid: OPENCHAT_SCREENSHOT=out.png [OPENCHAT_SCRIPT=js] captures the window and quits.
-  const shot = process.env.OPENCHAT_SCREENSHOT;
+  const shot = process.env.SHARECHAT_SCREENSHOT || process.env.OPENCHAT_SCREENSHOT;
   if (shot) {
     win.webContents.once('did-finish-load', async () => {
-      await new Promise((r) => setTimeout(r, Number(process.env.OPENCHAT_SHOT_DELAY) || 6000));
-      if (process.env.OPENCHAT_SCRIPT) {
-        await win.webContents.executeJavaScript(process.env.OPENCHAT_SCRIPT);
+      await new Promise((r) => setTimeout(r, Number(process.env.SHARECHAT_SHOT_DELAY || process.env.OPENCHAT_SHOT_DELAY) || 6000));
+      const script = process.env.SHARECHAT_SCRIPT || process.env.OPENCHAT_SCRIPT;
+      if (script) {
+        await win.webContents.executeJavaScript(script);
         await new Promise((r) => setTimeout(r, 4000));
       }
       const img = await win.webContents.capturePage();
@@ -55,51 +70,42 @@ function createWindow() {
   }
 }
 
-// Trim a session for display: the renderer only needs readable text.
-function preview(session) {
-  const msgs = session.messages;
-  const start = Math.max(0, msgs.length - MAX_PREVIEW);
-  return {
-    ...session,
-    file: session.file || null,
-    total: msgs.length,
-    omitted: start,
-    messages: msgs.slice(start).map((m) => (m.role === 'user'
-      ? { role: 'user', text: clip(m.text, 6000), ts: m.ts }
-      : {
-          role: 'assistant', ts: m.ts,
-          parts: m.parts.map((p) => (p.type === 'text'
-            ? { type: 'text', text: clip(p.text, 6000) }
-            : { type: 'tool', name: p.name, input: summarizeInput(p.input, 240), output: clip(p.output ?? '', 2000), isError: p.isError })),
-        })),
-    rawMarkdown: session.rawMarkdown ? clip(session.rawMarkdown, 60000) : undefined,
-  };
-}
 
 const handle = (channel, fn) => ipcMain.handle(channel, async (_e, ...args) => {
+  if (_e.sender !== mainWindow?.webContents) return { ok: false, error: '无效的窗口请求' };
   try { return { ok: true, data: await fn(...args) }; }
   catch (e) { return { ok: false, error: e.message || String(e) }; }
 });
 
-handle('agents', () => agentInfo());
+handle('agents', () => sessionTask('agents'));
 
-handle('sessions', () => {
-  const errors = [];
-  const rows = listSessions({ onError: (agent, e) => errors.push({ agent, message: e.message }) });
-  return { rows, errors };
+handle('sessions', () => sessionTask('sessions'));
+
+handle('session:load', (meta) => sessionTask('load', { meta }));
+
+handle('workspace:view', async mode => {
+  if (mode !== 'sessions' && mode !== 'terminal') throw new Error('未知视图');
+  await terminalHost.setVisible(mode === 'terminal');
+  return { mode: terminalHost.visible ? 'terminal' : 'sessions' };
 });
 
-handle('session:load', (meta) => preview(loadSession(meta).session));
-
-handle('convert', ({ meta, target, model, launch }) => {
-  const r = convertSession(meta, target, { model: model || undefined });
+handle('convert', async ({ meta, target, model, launch }) => {
+  if (launch) await terminalHost.ensure();
+  const r = await sessionTask('convert', { meta, target, model });
   const command = commandLine(r.resume);
-  if (launch) openInTerminal(r.resume, r.cwd);
-  return { ...r, command };
+  let terminalId = null;
+  let launchError = null;
+  if (launch) {
+    try { terminalId = await terminalHost.launch(r); }
+    catch (error) {
+      launchError = error.message;
+      await terminalHost?.setVisible(false);
+    }
+  }
+  return { ...r, command, terminalId, launchError };
 });
 
-handle('opencode:models', () => (runCli('opencode', ['models'], { timeout: 120000 }) || '')
-  .split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[^\s/]+\/\S+$/.test(l)));
+handle('opencode:models', () => sessionTask('models'));
 
 handle('reveal', (p) => { if (p) shell.showItemInFolder(p); });
 handle('open-folder', (p) => shell.openPath(p));
@@ -107,8 +113,10 @@ handle('copy', (text) => clipboard.writeText(String(text)));
 
 app.whenReady().then(() => {
   // OPENCHAT_THEME=light|dark overrides the system theme.
-  if (['light', 'dark'].includes(process.env.OPENCHAT_THEME)) nativeTheme.themeSource = process.env.OPENCHAT_THEME;
+  const theme = process.env.SHARECHAT_THEME || process.env.OPENCHAT_THEME || 'system';
+  if (['light', 'dark', 'system'].includes(theme)) nativeTheme.themeSource = theme;
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('before-quit', stopSessionTasks);

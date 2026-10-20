@@ -25,7 +25,7 @@ export function writeQwenSession(session, sourceLabel, { cwd }) {
       uuid, parentUuid, sessionId,
       timestamp: times[i].toISOString(),
       type: m.role === 'user' ? 'user' : 'assistant',
-      cwd, version: 'openchat',
+      cwd, version: 'sharechat',
       message: { role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] },
     };
     parentUuid = uuid;
@@ -34,7 +34,7 @@ export function writeQwenSession(session, sourceLabel, { cwd }) {
   if (session.title) {
     records.push({
       uuid: randomUUID(), parentUuid, sessionId, timestamp: new Date().toISOString(),
-      type: 'system', subtype: 'custom_title', cwd, version: 'openchat',
+      type: 'system', subtype: 'custom_title', cwd, version: 'sharechat',
       systemPayload: { customTitle: `${session.title}（来自 ${sourceLabel}）`, titleSource: 'manual' },
     });
   }

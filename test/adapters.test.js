@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'openchat-test-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sharechat-test-'));
 const write = (rel, lines) => {
   const p = path.join(tmp, rel);
   fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -143,7 +143,7 @@ for (const target of ['claude', 'codex', 'qwen', 'gemini', 'grok']) {
     const s = AGENTS[target].load(meta);
     const texts = flat(s);
     assert.equal(texts.length, 6);
-    assert.match(texts[0], /^U:\[本会话由 openchat 从 Codex 导入/);
+    assert.match(texts[0], /^U:\[本会话由 sharechat 从 Codex 导入/);
     assert.equal(texts[1], 'A:orphan reply');
     assert.match(texts[2], /q1$/);
     assert.match(texts[3], /external_agent_tool_call: ls[\s\S]*a\.txt[\s\S]*done/);

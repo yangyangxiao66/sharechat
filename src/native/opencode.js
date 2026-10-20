@@ -86,14 +86,14 @@ export function writeOpencodeSession(session, sourceLabel, { cwd, model: preferr
   });
   const data = {
     info: {
-      id: sessionID, slug: 'openchat-import', version: '1.0.0', projectID: projectId(cwd), directory: cwd,
+      id: sessionID, slug: 'sharechat-import', version: '1.0.0', projectID: projectId(cwd), directory: cwd,
       title: `${session.title || '导入的会话'}（来自 ${sourceLabel}）`,
       time: { created: times[0] ?? now, updated: now },
     },
     messages,
   };
 
-  const file = path.join(os.tmpdir(), `openchat-opencode-${sessionID}.json`);
+  const file = path.join(os.tmpdir(), `sharechat-opencode-${sessionID}.json`);
   fs.writeFileSync(file, JSON.stringify(data));
   const out = runCli('opencode', ['import', file], { timeout: 120000, cwd })
     ?? runCli('opencode', ['session', 'import', file], { timeout: 120000, cwd });

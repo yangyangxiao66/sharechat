@@ -6,7 +6,7 @@ const call = async (channel, ...args) => {
   return r.data;
 };
 
-contextBridge.exposeInMainWorld('openchat', {
+contextBridge.exposeInMainWorld('sharechat', {
   platform: process.platform,
   agents: () => call('agents'),
   sessions: () => call('sessions'),
@@ -16,4 +16,10 @@ contextBridge.exposeInMainWorld('openchat', {
   reveal: (p) => call('reveal', p),
   openFolder: (p) => call('open-folder', p),
   copy: (text) => call('copy', text),
+  setView: (mode) => call('workspace:view', mode),
+  onViewChange: (callback) => {
+    const handler = (_event, mode) => callback(mode);
+    ipcRenderer.on('workspace:view', handler);
+    return () => ipcRenderer.removeListener('workspace:view', handler);
+  },
 });

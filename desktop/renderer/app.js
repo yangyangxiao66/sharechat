@@ -1,4 +1,4 @@
-const api = window.openchat;
+const api = window.sharechat;
 const $ = (id) => document.getElementById(id);
 
 const GLYPH = { claude: 'C', codex: 'X', grok: 'G', qwen: 'Q', gemini: 'Ge', opencode: 'O' };
@@ -16,6 +16,27 @@ const state = {
 };
 
 document.body.classList.add(`platform-${api.platform}`);
+
+function renderView(mode) {
+  document.body.dataset.view = mode;
+  $('terminal-host').hidden = mode !== 'terminal';
+  $('refresh').hidden = mode !== 'sessions';
+  for (const button of document.querySelectorAll('.workspace-nav [data-view]')) {
+    button.classList.toggle('active', button.dataset.view === mode);
+    button.setAttribute('aria-pressed', String(button.dataset.view === mode));
+  }
+}
+
+api.onViewChange(renderView);
+for (const button of document.querySelectorAll('.workspace-nav [data-view]')) {
+  button.addEventListener('click', async () => {
+    const mode = button.dataset.view;
+    renderView(mode);
+    $('terminal-loading').textContent = '正在加载终端矩阵…';
+    try { const result = await api.setView(mode); renderView(result.mode); }
+    catch (error) { $('terminal-loading').textContent = error.message; toast(error.message); }
+  });
+}
 
 // ---------- helpers ----------
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -232,7 +253,12 @@ async function convert() {
         ${r.file && !String(r.file).startsWith('opencode:') ? `<button class="mini-btn" data-reveal="${esc(r.file)}">在文件夹中显示</button>` : ''}
         <button class="mini-btn" data-copy="${esc(`cd "${r.cwd}" && ${r.command}`)}">复制完整命令</button>
       </div>`;
-    toast(`已转换到 ${labelOf(r.target)}`);
+    if (r.launchError) {
+      const warning = document.createElement('p');
+      warning.textContent = `会话已转换，但终端启动失败：${r.launchError}。可复制上方命令重试。`;
+      res.appendChild(warning);
+    }
+    toast(r.launchError ? '会话已转换，请检查终端启动提示' : `已转换到 ${labelOf(r.target)}`);
     refresh({ keepSelection: true });
   } catch (e) {
     res.className = 'result error';
@@ -314,6 +340,7 @@ $('refresh').addEventListener('click', () => refresh({ keepSelection: true }));
 $('search').addEventListener('input', (e) => { state.query = e.target.value; renderList(); });
 
 document.addEventListener('keydown', (e) => {
+  if (document.body.dataset.view !== 'sessions') return;
   const typing = e.target.matches('input, select, textarea');
   if (e.key === '/' && !typing) { e.preventDefault(); $('search').focus(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') { e.preventDefault(); refresh({ keepSelection: true }); return; }

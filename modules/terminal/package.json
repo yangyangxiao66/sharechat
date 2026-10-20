@@ -1,0 +1,6 @@
+{
+  "name": "sharechat-terminal",
+  "private": true,
+  "type": "commonjs",
+  "main": "main.js"
+}

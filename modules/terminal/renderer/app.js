@@ -1,0 +1,3028 @@
+const grid = document.getElementById("terminalGrid");
+const emptyState = document.getElementById("emptyState");
+const sessionCount = document.getElementById("sessionCount");
+const workspaceButton = document.getElementById("workspaceButton");
+const workspacePath = document.getElementById("workspacePath");
+const gitBranchControl = document.getElementById("gitBranchControl");
+const gitBranchSelect = document.getElementById("gitBranchSelect");
+const shellSelect = document.getElementById("shellSelect");
+const remoteAgentSelect = document.getElementById("remoteAgentSelect");
+const layoutSelect = document.getElementById("layoutSelect");
+const skinShopButton = document.getElementById("skinShopButton");
+const customSkinButton = document.getElementById("customSkinButton");
+const glassControl = document.getElementById("glassControl");
+const glassSlider = document.getElementById("glassSlider");
+const glassValue = document.getElementById("glassValue");
+const newTerminalButton = document.getElementById("newTerminalButton");
+const emptyNewButton = document.getElementById("emptyNewButton");
+const contextMenu = document.getElementById("terminalContextMenu");
+const petToggleButton = document.getElementById("petToggleButton");
+const petToggleLabel = document.getElementById("petToggleLabel");
+const mcpSetupButton = document.getElementById("mcpSetupButton");
+const mcpAgentMenu = document.getElementById("mcpAgentMenu");
+const sshDialog = document.getElementById("sshDialog");
+const sshForm = document.getElementById("sshForm");
+const sshHost = document.getElementById("sshHost");
+const sshPort = document.getElementById("sshPort");
+const sshUser = document.getElementById("sshUser");
+const sshAuthMethod = document.getElementById("sshAuthMethod");
+const sshAuthPasswordBlock = document.getElementById("sshAuthPasswordBlock");
+const sshAuthKeyBlock = document.getElementById("sshAuthKeyBlock");
+const sshPassword = document.getElementById("sshPassword");
+const sshPassphrase = document.getElementById("sshPassphrase");
+const sshRemoteRoot = document.getElementById("sshRemoteRoot");
+const sshAgentLaunch = document.getElementById("sshAgentLaunch");
+const sshAgentEnabled = document.getElementById("sshAgentEnabled");
+const sshAgentOptions = document.getElementById("sshAgentOptions");
+const sshAgentDetectionText = document.getElementById("sshAgentDetectionText");
+const sshAgentRefresh = document.getElementById("sshAgentRefresh");
+const sshIdentity = document.getElementById("sshIdentity");
+const sshIdentityDrop = document.getElementById("sshIdentityDrop");
+const sshIdentityPick = document.getElementById("sshIdentityPick");
+const sshIdentityClear = document.getElementById("sshIdentityClear");
+const sshAuthHint = document.getElementById("sshAuthHint");
+const sshFormError = document.getElementById("sshFormError");
+const sshRecents = document.getElementById("sshRecents");
+const sshRecentsList = document.getElementById("sshRecentsList");
+const sshConnectButton = document.getElementById("sshConnectButton");
+const sshConnectButtonLabel = document.getElementById("sshConnectButtonLabel");
+const sshConnectButtonSidebar = document.getElementById("sshConnectButtonSidebar");
+const emptySshButton = document.getElementById("emptySshButton");
+const tabBar = document.getElementById("tabBar");
+const tabList = document.getElementById("tabList");
+const settingsButton = document.getElementById("settingsButton");
+const settingsMenu = document.getElementById("settingsMenu");
+const sessionList = document.getElementById("sessionList");
+const sessionListCount = document.getElementById("sessionListCount");
+const sessionListEmpty = document.getElementById("sessionListEmpty");
+const sshHostList = document.getElementById("sshHostList");
+const statusPath = document.getElementById("statusPath");
+const statusBranch = document.getElementById("statusBranch");
+const statusView = document.getElementById("statusView");
+const statusShell = document.getElementById("statusShell");
+const viewModeToggle = document.getElementById("viewModeToggle");
+const VIEW_MODE_KEY = "terminal-deck-view-mode";
+/** 保留终端矩阵的默认网格；已保存的显示方式优先。 */
+let viewMode = (() => {
+  try {
+    return window.TabModel ? window.TabModel.resolveViewMode(localStorage.getItem(VIEW_MODE_KEY) || "grid") : "grid";
+  } catch {
+    return "grid";
+  }
+})();
+const agentWorkspace = document.getElementById("agentWorkspace");
+const terminalWorkspace = document.getElementById("terminalWorkspace");
+const agentConversation = document.getElementById("agentConversation");
+const agentComposer = document.getElementById("agentComposer");
+const agentPrompt = document.getElementById("agentPrompt");
+const agentSendButton = document.getElementById("agentSendButton");
+const agentTerminalJump = document.getElementById("agentTerminalJump");
+const composerAgentButton = document.getElementById("composerAgentButton");
+const composerAgentLabel = document.getElementById("composerAgentLabel");
+const newTaskButton = document.getElementById("newTaskButton");
+const inspectorWorkspacePath = document.getElementById("inspectorWorkspacePath");
+const inspectorSessionCount = document.getElementById("inspectorSessionCount");
+const refreshEnvironmentButton = document.getElementById("refreshEnvironmentButton");
+let petEnabled = false;
+
+const SSH_RECENTS_KEY = "terminal-deck-ssh-recents";
+const SSH_RECENTS_MAX = 12;
+const REMOTE_AGENT_DEFINITIONS = Object.freeze({
+  codex: { id: "codex", label: "Codex", command: "codex" },
+  grok: { id: "grok", label: "Grok", command: "grok" },
+  claude: { id: "claude", label: "Claude Code", command: "claude" },
+});
+let sshAgentDetectionRun = 0;
+/** @type {null | ((value: object | null) => void)} */
+let sshDialogResolve = null;
+
+/** 图片皮肤通透度 0–100（越低背景越清晰） */
+let glassLevel = typeof loadGlassLevel === "function" ? loadGlassLevel() : 22;
+
+/**
+ * Grok / Claude / Codex 等全屏 TUI 会用 OSC 11 与 SGR 背景色把 xterm 单元格涂成不透明，
+ * 盖住图片皮肤的通透效果。图片皮肤开启时剥掉「设置背景」序列，让单元格走 theme.background（带 alpha）。
+ */
+function createGlassOutputFilter() {
+  let pending = "";
+
+  function stripSgrBackgrounds(body) {
+    if (!body) return "";
+    // 顶层用 `;` 分段；段内 `:` 为 ITU 子参数（如 48:2::R:G:B）
+    const top = String(body).split(";");
+    const out = [];
+
+    const takeSemicolonColor = (startIndex, into) => {
+      // 消费 mode + (5 → 1 索引 | 2 → 3 通道)
+      const mode = Number(top[startIndex + 1]);
+      if (mode === 5 && startIndex + 2 < top.length) {
+        if (into) into.push(top[startIndex], top[startIndex + 1], top[startIndex + 2]);
+        return startIndex + 2;
+      }
+      if (mode === 2 && startIndex + 4 < top.length) {
+        if (into) {
+          into.push(
+            top[startIndex],
+            top[startIndex + 1],
+            top[startIndex + 2],
+            top[startIndex + 3],
+            top[startIndex + 4]
+          );
+        }
+        return startIndex + 4;
+      }
+      if (into) into.push(top[startIndex]);
+      return startIndex;
+    };
+
+    for (let i = 0; i < top.length; i += 1) {
+      const seg = top[i];
+      const colon = seg.indexOf(":");
+      const head = colon === -1 ? seg : seg.slice(0, colon);
+      const n = Number(head);
+
+      // 标准/亮色背景、默认背景
+      if ((n >= 40 && n <= 47) || (n >= 100 && n <= 107) || n === 49) continue;
+
+      // 48… 背景（colon 整段自洽；semicolon 后跟 5/n 或 2/r/g/b）
+      if (n === 48) {
+        if (colon !== -1) continue;
+        i = takeSemicolonColor(i, null);
+        continue;
+      }
+
+      // 38… 前景 / 58… 下划线色：必须整组保留，否则会拆坏真彩序列
+      if (n === 38 || n === 58) {
+        if (colon !== -1) {
+          out.push(seg);
+          continue;
+        }
+        i = takeSemicolonColor(i, out);
+        continue;
+      }
+
+      out.push(seg);
+    }
+
+    return out.join(";");
+  }
+
+  function stripComplete(text) {
+    // OSC 11：设置默认背景（查询 11;? 保留）
+    text = text.replace(
+      /\u001b\]11;([^\u0007\u001b\u009c]*)(?:\u0007|\u001b\\|\u009c)/g,
+      (match, payload) => {
+        const p = String(payload || "").trim();
+        if (p === "?" || p.startsWith("?")) return match;
+        return "";
+      }
+    );
+
+    // SGR：剥掉背景参数，保留前景/粗体等
+    text = text.replace(/\u001b\[([0-9;:]*)m/g, (match, body) => {
+      if (!body) return match;
+      const next = stripSgrBackgrounds(body);
+      if (next === body) return match;
+      if (!next) return "";
+      return `\u001b[${next}m`;
+    });
+
+    return text;
+  }
+
+  function splitIncomplete(s) {
+    const lastEsc = s.lastIndexOf("\u001b");
+    if (lastEsc === -1) return { emit: s, hold: "" };
+    const tail = s.slice(lastEsc);
+    if (tail.startsWith("\u001b]")) {
+      if (/\u0007|\u001b\\|\u009c/.test(tail)) return { emit: s, hold: "" };
+      return { emit: s.slice(0, lastEsc), hold: tail };
+    }
+    if (tail.startsWith("\u001b[")) {
+      // CSI 终结符 0x40–0x7E
+      if (/[\x40-\x7e]/.test(tail.slice(2))) return { emit: s, hold: "" };
+      return { emit: s.slice(0, lastEsc), hold: tail };
+    }
+    if (tail === "\u001b") return { emit: s.slice(0, lastEsc), hold: tail };
+    return { emit: s, hold: "" };
+  }
+
+  return function filter(chunk, stripBg) {
+    const { emit, hold } = splitIncomplete(pending + String(chunk || ""));
+    pending = hold;
+    if (!emit) return "";
+    return stripBg ? stripComplete(emit) : emit;
+  };
+}
+
+const sessions = new Map();
+let activeId = null;
+/** Agent 状态汇总（见下方「Agent 状态显示」） */
+let agentSummaryCounts = { running: 0, waiting: 0, approval: 0, idle: 0, exited: 0 };
+let sequence = 1;
+let defaultWorkspace = (() => {
+  try {
+    return localStorage.getItem("terminal-deck-workspace") || window.terminalDeck.defaultWorkspace;
+  } catch {
+    return window.terminalDeck.defaultWorkspace;
+  }
+})();
+
+function updateWorkspacePresentation(workspace) {
+  const value = String(workspace || "");
+  const displayName = value.replace(/[\\/]+$/g, "").split(/[\\/]/).pop() || value;
+  workspacePath.textContent = value;
+  workspaceButton.title = value;
+  workspaceButton.querySelector(".studio-project-copy strong")?.replaceChildren(displayName);
+  if (inspectorWorkspacePath) {
+    inspectorWorkspacePath.textContent = value;
+    inspectorWorkspacePath.title = value;
+  }
+  document.querySelector(".studio-task-title > span")?.replaceChildren(value);
+}
+
+let contextTargetId = null;
+/** 拖动调整尺寸时跳过 ResizeObserver，避免 fit 抖动/循环 */
+let isResizingPane = false;
+/** 网格轨道权重（fr），拖动分割时调整；仅行列数变化时重置为均分 */
+let colTracks = [1];
+let rowTracks = [1];
+let gridCols = 1;
+let gridRows = 1;
+const MIN_TRACK_FR = 0.15;
+const GRID_GAP_PX = 4;
+/** 全量 fit 防抖，避免开第 N 个终端时对已有会话连打多次 PTY resize（TUI 会乱） */
+let fitAllTimer = 0;
+const FIT_DEBOUNCE_MS = 120;
+/** Agent 正在连续输出时，先等一个短暂静默窗口再改变 PTY 行列。 */
+const FIT_OUTPUT_QUIET_MS = 320;
+/** 动画型 TUI 可能持续输出；最长等待后仍只执行一次最终 resize。 */
+const FIT_OUTPUT_MAX_WAIT_MS = 1200;
+
+/** 当前皮肤 id + xterm 主题（由 skins.js 驱动） */
+let currentSkinId = typeof loadSavedSkinId === "function" ? loadSavedSkinId() : "matrix";
+let customSkinImage = typeof loadCustomImage === "function" ? loadCustomImage() : "";
+let currentXtermTheme =
+  typeof applySkinToDocument === "function"
+    ? applySkinToDocument(currentSkinId, { customImage: customSkinImage })
+    : null;
+
+function isCurrentImageSkin() {
+  const skin = typeof getSkin === "function" ? getSkin(currentSkinId) : null;
+  if (typeof isImageSkinId === "function") return isImageSkinId(currentSkinId, skin);
+  return (
+    currentSkinId === "wallpaper" ||
+    Boolean(skin && skin.ui && skin.ui.backgroundImage)
+  );
+}
+
+function syncGlassControlUi() {
+  const show = isCurrentImageSkin() && !document.body.classList.contains("char-field-replaces-image");
+  if (glassControl) glassControl.hidden = !show;
+  if (glassSlider) glassSlider.value = String(glassLevel);
+  if (glassValue) glassValue.textContent = String(glassLevel);
+}
+
+function refreshTerminalTheme(session, theme) {
+  if (!session || !session.terminal || !theme) return;
+  session.terminal.options.theme = { ...theme };
+  try {
+    session.terminal.refresh(0, Math.max(0, session.terminal.rows - 1));
+  } catch {
+    // ignore
+  }
+}
+
+/** 当前面板用较高 alpha，其余更透，多开时背景图能从 inactive 透出 */
+function applyXtermGlassByFocus() {
+  if (!currentXtermTheme || !isCurrentImageSkin()) return;
+  if (document.body.classList.contains("char-field-replaces-image")) return;
+  const glass = currentXtermTheme._glass;
+  if (!glass || typeof makeRgba !== "function") {
+    for (const session of sessions.values()) {
+      refreshTerminalTheme(session, currentXtermTheme);
+    }
+    return;
+  }
+  const activeBg = makeRgba(glass.xtermAlpha);
+  const inactiveBg = makeRgba(glass.xtermAlphaInactive);
+  for (const [sessionId, session] of sessions) {
+    const bg = sessionId === activeId ? activeBg : inactiveBg;
+    refreshTerminalTheme(session, { ...currentXtermTheme, background: bg });
+  }
+}
+
+/** 字符背景铺到终端区时，终端背景改为半透明。 */
+function effectiveXtermTheme(theme) {
+  if (!theme || !document.body.classList.contains("char-field-terminal")) {
+    return theme;
+  }
+  const background =
+    typeof CharField !== "undefined" ? CharField.toRgba(theme.background, 0.5) : null;
+  return background ? { ...theme, background } : theme;
+}
+
+function applyCurrentSkin() {
+  if (typeof applySkinToDocument !== "function") return;
+  // 图片预设皮肤自带 backgroundImage；wallpaper 用自定义图
+  const imageSkin = isCurrentImageSkin();
+  currentXtermTheme = applySkinToDocument(currentSkinId, {
+    customImage: imageSkin ? customSkinImage : "",
+    glassLevel,
+    sessionCount: sessions.size,
+  });
+  if (imageSkin && !document.body.classList.contains("char-field-replaces-image")) {
+    applyXtermGlassByFocus();
+  } else {
+    const theme = effectiveXtermTheme(currentXtermTheme);
+    for (const session of sessions.values()) {
+      refreshTerminalTheme(session, theme);
+    }
+  }
+  syncGlassControlUi();
+  if (typeof window.charFieldSync === "function") window.charFieldSync();
+}
+
+function setSkin(skinId) {
+  currentSkinId = skinId || "matrix";
+  if (typeof saveSkinId === "function") saveSkinId(currentSkinId);
+  applyCurrentSkin();
+  if (window.skinShop && typeof window.skinShop.refresh === "function" && window.skinShop.isOpen()) {
+    window.skinShop.refresh();
+  }
+}
+
+/** 皮肤商城 ↔ app 桥接 */
+window.__getCurrentSkinId = () => currentSkinId;
+window.__hasCustomSkinImage = () => Boolean(customSkinImage);
+window.__getCustomSkinPreview = () => customSkinImage || "";
+window.__applySkinFromShop = (skinId) => {
+  setSkin(skinId);
+};
+window.__uploadSkinFromShop = async () => {
+  if (!window.terminalDeck.chooseSkinImage) return;
+  const result = await window.terminalDeck.chooseSkinImage();
+  if (!result) return;
+  if (result.error) {
+    window.alert(result.error);
+    return;
+  }
+  if (!result.dataUrl) return;
+  customSkinImage = result.dataUrl;
+  const saved = typeof saveCustomImage === "function" ? saveCustomImage(customSkinImage) : true;
+  setSkin("wallpaper");
+  if (window.skinShop && typeof window.skinShop.refresh === "function") {
+    window.skinShop.refresh();
+  }
+  if (!saved) {
+    window.alert("图片已应用，但太大无法记住（请换更小的图，建议 2MB 以内）");
+  }
+};
+
+function setGlassLevel(level) {
+  const next = Math.min(100, Math.max(0, Math.round(Number(level) || 0)));
+  glassLevel = next;
+  if (typeof saveGlassLevel === "function") saveGlassLevel(glassLevel);
+  syncGlassControlUi();
+  if (isCurrentImageSkin()) applyCurrentSkin();
+}
+
+function hideContextMenu() {
+  contextMenu.hidden = true;
+  contextTargetId = null;
+}
+
+function showContextMenu(event, id) {
+  event.preventDefault();
+  contextTargetId = id;
+  contextMenu.hidden = false;
+  const width = contextMenu.offsetWidth;
+  const height = contextMenu.offsetHeight;
+  contextMenu.style.left = `${Math.min(event.clientX, window.innerWidth - width - 8)}px`;
+  contextMenu.style.top = `${Math.min(event.clientY, window.innerHeight - height - 8)}px`;
+}
+
+function copySelection(session) {
+  if (!session || !session.terminal.hasSelection()) return;
+  window.terminalDeck.writeClipboard(session.terminal.getSelection());
+}
+
+function pasteClipboard(session) {
+  if (!session) return;
+  const text = window.terminalDeck.readClipboard();
+  if (!text) return;
+  session.agentTracker?.input(text);
+  window.terminalDeck.write(session.id, text);
+}
+
+function handleTerminalUserInput(session, data) {
+  if (!session) return;
+  session.agentTracker?.input(data);
+  window.terminalDeck.write(session.id, data);
+}
+
+function syncPetStatus(extra = {}) {
+  const active = activeId ? sessions.get(activeId) : null;
+  const count = sessions.size;
+  let mood = "idle";
+  if (count >= 6 || agentSummaryCounts.running > 0) mood = "busy";
+  else if (count >= 1) mood = "idle";
+  window.terminalDeck.updatePetStatus({
+    terminalCount: count,
+    activeShell: active ? active.shell : shellSelect.value,
+    mood: extra.mood || mood,
+    alert: extra.alert || "",
+    alertAt: extra.alert ? Date.now() : 0,
+  });
+}
+
+function setPetToggleUi(enabled) {
+  petEnabled = Boolean(enabled);
+  petToggleButton.classList.toggle("active", petEnabled);
+  petToggleButton.setAttribute("aria-pressed", petEnabled ? "true" : "false");
+  petToggleLabel.textContent = petEnabled ? "宠物已开" : "矩阵宠物";
+  petToggleButton.title = petEnabled
+    ? "关闭桌面矩阵宠物（关闭主窗口时宠物会保持显示）"
+    : "在桌面显示矩阵宠物";
+}
+
+function updateSessionCount() {
+  const count = sessions.size;
+  sessionCount.textContent = `${count} 个终端`;
+  emptyState.classList.toggle("hidden", count > 0);
+  if (count === 0 && typeof renderWelcome === "function") renderWelcome();
+  if (typeof window.charFieldSync === "function") window.charFieldSync();
+  syncPetStatus();
+  // 图片皮肤间距已固定，不再随数量改 gap（3→4 时改 gap 会触发全局 reflow，TUI 边框乱）
+}
+
+function setActive(id) {
+  activeId = id;
+  for (const [sessionId, session] of sessions) {
+    session.element.classList.toggle("active", sessionId === id);
+  }
+  applyXtermGlassByFocus();
+  updateTabsActive();
+  const active = sessions.get(id);
+  if (!active) return;
+  active.terminal.focus();
+  // 标签页模式：切到前台后再按真实尺寸 fit（后台会话保持原样，不重建）
+  if (viewMode === "tabs") {
+    requestAnimationFrame(() => {
+      if (activeId === id) scheduleFitSession(active);
+    });
+  }
+}
+
+/**
+ * 按 DOM 尺寸 fit xterm，仅在 cols/rows 真正变化时通知 ConPTY。
+ * 重复 resize 会打乱 Grok/Claude 等全屏 TUI 的边框绘制。
+ * 2→1 分屏变宽时若未配置 windowsPty，xterm 会对 ConPTY 缓冲错误 reflow 导致乱字。
+ */
+function fitSession(session, options = {}) {
+  if (!session || !document.body.contains(session.element)) return false;
+  if (isResizingPane && !options.force) return false;
+  try {
+    const host = session.element.querySelector(".terminal-host");
+    if (host && (host.clientWidth < 20 || host.clientHeight < 20)) return false;
+
+    const prevCols = session.terminal.cols;
+    const prevRows = session.terminal.rows;
+    session.fitAddon.fit();
+    const cols = session.terminal.cols;
+    const rows = session.terminal.rows;
+    if (cols <= 1 || rows <= 1) return false;
+
+    const dimsChanged = cols !== prevCols || rows !== prevRows;
+    const ptySizeChanged =
+      session.lastPtyCols !== cols ||
+      session.lastPtyRows !== rows;
+
+    // 与上次通知 ConPTY 的尺寸相同则跳过（避免 SIGWINCH 把 Grok 等 TUI 边框画花）
+    if (!ptySizeChanged) {
+      // 布局变了但 PTY 尺寸未变时仍刷新画面（避免 canvas 拉伸残影）
+      if (dimsChanged || options.force) {
+        try {
+          session.terminal.refresh(0, Math.max(0, rows - 1));
+        } catch {
+          // ignore
+        }
+      }
+      return false;
+    }
+
+    session.lastPtyCols = cols;
+    session.lastPtyRows = rows;
+    window.terminalDeck.resize(session.id, cols, rows);
+
+    // 行列变化后强制重绘，减少分屏合并时的花屏/叠字
+    if (dimsChanged || options.force) {
+      try {
+        session.terminal.refresh(0, Math.max(0, rows - 1));
+      } catch {
+        // ignore
+      }
+    }
+    return ptySizeChanged;
+  } catch {
+    // The pane may be between layout states.
+    return false;
+  }
+}
+
+function scheduleFitAllSessions(options = {}) {
+  if (fitAllTimer) window.clearTimeout(fitAllTimer);
+  fitAllTimer = window.setTimeout(() => {
+    fitAllTimer = 0;
+    for (const session of sessions.values()) scheduleFitSession(session, options);
+  }, FIT_DEBOUNCE_MS);
+}
+
+function redrawSession(session, options = {}) {
+  if (!session || !sessions.has(session.id)) return;
+  try {
+    session.terminal.refresh(0, Math.max(0, session.terminal.rows - 1));
+  } catch {
+    // ignore renderer refresh races
+  }
+  if (options.notifyProcess) {
+    // Ctrl+L 是 shell 与绝大多数全屏 TUI 的安全重绘键。
+    window.terminalDeck.write(session.id, "\x0c");
+  }
+}
+
+function scheduleTuiRedraw(session) {
+  if (!session || session.terminal.buffer.active.type !== "alternate") return;
+  if (session._redrawTimer) window.clearTimeout(session._redrawTimer);
+  const outputAtResize = session.lastOutputAt || 0;
+  session._redrawTimer = window.setTimeout(() => {
+    session._redrawTimer = 0;
+    if (!sessions.has(session.id)) return;
+    if (session.terminal.buffer.active.type !== "alternate") return;
+    // TUI 若已经响应 SIGWINCH 输出了新帧，就不再额外发送 Ctrl+L。
+    if ((session.lastOutputAt || 0) > outputAtResize) return;
+    redrawSession(session, { notifyProcess: true });
+  }, 140);
+}
+
+function scheduleFitSession(session, options = {}) {
+  if (!session) return;
+  if (session._fitTimer) window.clearTimeout(session._fitTimer);
+  const requestedAt = performance.now();
+
+  const attemptFit = () => {
+    if (!sessions.has(session.id)) return;
+    const now = performance.now();
+    const quietFor = now - (session.lastOutputAt || 0);
+    const waitedFor = now - requestedAt;
+
+    if (
+      session.lastOutputAt &&
+      quietFor < FIT_OUTPUT_QUIET_MS &&
+      waitedFor < FIT_OUTPUT_MAX_WAIT_MS
+    ) {
+      const remainingQuiet = FIT_OUTPUT_QUIET_MS - quietFor;
+      const remainingMax = FIT_OUTPUT_MAX_WAIT_MS - waitedFor;
+      session._fitTimer = window.setTimeout(
+        attemptFit,
+        Math.max(32, Math.min(remainingQuiet, remainingMax))
+      );
+      return;
+    }
+
+    session._fitTimer = 0;
+    const resized = fitSession(session, options);
+    if (resized) scheduleTuiRedraw(session);
+  };
+
+  session._fitTimer = window.setTimeout(attemptFit, FIT_DEBOUNCE_MS);
+}
+
+function getLayoutMode() {
+  return layoutSelect.value || "auto";
+}
+
+/**
+ * 根据终端数量计算行列，让所有终端铺满可视区域。
+ * auto：1→1x1, 2→2x1, 3→2x2(空一格), 4→2x2, 5~6→3x2, 7~9→3x3 …
+ * 注意：3 与 4 同为 2x2，开第 4 个只填空位，不应重置轨道比例。
+ */
+function computeGridShape(count, mode) {
+  const n = Math.max(1, count);
+  if (mode === "columns") return { cols: n, rows: 1 };
+  if (mode === "rows") return { cols: 1, rows: n };
+  const cols = Math.ceil(Math.sqrt(n));
+  const rows = Math.ceil(n / cols);
+  return { cols, rows };
+}
+
+function applyTrackStyles() {
+  grid.style.gridTemplateColumns = colTracks.map((fr) => `minmax(0, ${fr}fr)`).join(" ");
+  grid.style.gridTemplateRows = rowTracks.map((fr) => `minmax(0, ${fr}fr)`).join(" ");
+}
+
+function updatePaneEdgeClasses() {
+  const list = [...sessions.values()];
+  list.forEach((session, index) => {
+    const col = index % gridCols;
+    const row = Math.floor(index / gridCols);
+    session.element.classList.toggle("edge-last-col", col === gridCols - 1);
+    session.element.classList.toggle("edge-last-row", row === gridRows - 1);
+  });
+}
+
+/**
+ * 重新排布网格：新建/关闭/切换布局时调用。
+ * 行列数未变时保留用户拖动的分割比例，避免已有终端被无故缩放。
+ */
+function relayoutGrid(options = {}) {
+  const count = sessions.size;
+  const mode = getLayoutMode();
+  const shape = computeGridShape(count, mode);
+  const shapeChanged = shape.cols !== gridCols || shape.rows !== gridRows;
+
+  gridCols = shape.cols;
+  gridRows = shape.rows;
+
+  if (shapeChanged || options.resetTracks) {
+    colTracks = Array.from({ length: gridCols }, () => 1);
+    rowTracks = Array.from({ length: gridRows }, () => 1);
+  } else {
+    // 补齐/裁剪轨道长度（极少见：mode 不变但算法微调）
+    while (colTracks.length < gridCols) colTracks.push(1);
+    while (rowTracks.length < gridRows) rowTracks.push(1);
+    if (colTracks.length > gridCols) colTracks = colTracks.slice(0, gridCols);
+    if (rowTracks.length > gridRows) rowTracks = rowTracks.slice(0, gridRows);
+  }
+
+  applyTrackStyles();
+  updatePaneEdgeClasses();
+
+  // 等布局稳定后一次性 fit，避免 ResizeObserver 连环触发
+  // close 导致 2→1 形状剧变时传 force，确保最终尺寸写入 ConPTY
+  const fitOptions = options.fitOptions || {};
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => scheduleFitAllSessions(fitOptions));
+  });
+}
+
+function getSessionGridIndex(session) {
+  return [...sessions.values()].indexOf(session);
+}
+
+function splitTracks(tracks, index, pixelDelta, containerPx) {
+  if (index < 0 || index >= tracks.length - 1) return false;
+  const gapTotal = GRID_GAP_PX * Math.max(0, tracks.length - 1);
+  const usable = Math.max(1, containerPx - gapTotal);
+  const sum = tracks.reduce((a, b) => a + b, 0) || 1;
+  const pxPerFr = usable / sum;
+  if (pxPerFr <= 0) return false;
+
+  const pairFr = tracks[index] + tracks[index + 1];
+  let leftFr = tracks[index] + pixelDelta / pxPerFr;
+  leftFr = Math.max(MIN_TRACK_FR, Math.min(pairFr - MIN_TRACK_FR, leftFr));
+  tracks[index] = leftFr;
+  tracks[index + 1] = pairFr - leftFr;
+  return true;
+}
+
+function bindResizeHandles(session) {
+  const handles = session.element.querySelectorAll(".resize-handle");
+  for (const handle of handles) {
+    handle.addEventListener("pointerdown", (event) => {
+      if (session.element.classList.contains("maximized")) return;
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      activeId = session.id;
+      for (const [sessionId, item] of sessions) {
+        item.element.classList.toggle("active", sessionId === session.id);
+      }
+      startPaneResize(session, handle.dataset.dir || "se", event, handle);
+    });
+  }
+}
+
+function startPaneResize(session, direction, event, handle) {
+  const layout = getLayoutMode();
+  const index = getSessionGridIndex(session);
+  if (index < 0) return;
+
+  const col = index % gridCols;
+  const row = Math.floor(index / gridCols);
+  const canResizeX = direction.includes("e") && layout !== "rows" && col < gridCols - 1;
+  const canResizeY = direction.includes("s") && layout !== "columns" && row < gridRows - 1;
+  if (!canResizeX && !canResizeY) return;
+
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const startCols = colTracks.slice();
+  const startRows = rowTracks.slice();
+  const gridRect = grid.getBoundingClientRect();
+
+  if (handle) handle.classList.add("active");
+  const cursor = canResizeX && canResizeY ? "nwse-resize" : canResizeX ? "ew-resize" : "ns-resize";
+  isResizingPane = true;
+  document.body.classList.add("is-resizing-pane");
+  document.body.style.cursor = cursor;
+
+  let usedCapture = false;
+  try {
+    handle.setPointerCapture(event.pointerId);
+    usedCapture = true;
+  } catch {
+    usedCapture = false;
+  }
+
+  const onMove = (moveEvent) => {
+    moveEvent.preventDefault();
+    colTracks = startCols.slice();
+    rowTracks = startRows.slice();
+
+    if (canResizeX) {
+      splitTracks(colTracks, col, moveEvent.clientX - startX, gridRect.width);
+    }
+    if (canResizeY) {
+      splitTracks(rowTracks, row, moveEvent.clientY - startY, gridRect.height);
+    }
+    applyTrackStyles();
+  };
+
+  const target = usedCapture ? handle : document;
+  const onUp = (upEvent) => {
+    target.removeEventListener("pointermove", onMove);
+    target.removeEventListener("pointerup", onUp);
+    target.removeEventListener("pointercancel", onUp);
+    try {
+      if (usedCapture && upEvent && handle.hasPointerCapture?.(upEvent.pointerId)) {
+        handle.releasePointerCapture(upEvent.pointerId);
+      }
+    } catch {
+      // ignore
+    }
+    isResizingPane = false;
+    document.body.classList.remove("is-resizing-pane");
+    document.body.style.cursor = "";
+    if (handle) handle.classList.remove("active");
+
+    // 拖动过程中只改变 CSS 网格，避免每一帧都向全部 ConPTY 发送 resize，
+    // 否则 Grok/Codex 等全屏 TUI 会在连续重绘中出现错行和叠字。
+    // 松手后等两帧让网格和 terminal-host 尺寸稳定，再统一适配一次。
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!isResizingPane) scheduleFitAllSessions({ force: true });
+      });
+    });
+  };
+
+  target.addEventListener("pointermove", onMove);
+  target.addEventListener("pointerup", onUp);
+  target.addEventListener("pointercancel", onUp);
+}
+
+function closeSession(id) {
+  const session = sessions.get(id);
+  if (!session) return;
+  if (session._fitTimer) {
+    window.clearTimeout(session._fitTimer);
+    session._fitTimer = 0;
+  }
+  if (session._redrawTimer) {
+    window.clearTimeout(session._redrawTimer);
+    session._redrawTimer = 0;
+  }
+  session.resizeObserver.disconnect();
+  window.terminalDeck.close(id);
+  session.terminal.dispose();
+  session.element.remove();
+  session.tabEl?.remove();
+  session.listEl?.remove();
+  const orderBefore = [...sessions.keys()];
+  sessions.delete(id);
+  refreshRemoteAgentOptions();
+  if (activeId === id) {
+    const remaining = [...sessions.keys()];
+    activeId = window.TabModel
+      ? window.TabModel.neighborAfterClose(orderBefore, id, id)
+      : remaining.length ? remaining[remaining.length - 1] : null;
+    if (activeId) setActive(activeId);
+  }
+  renderTabs();
+  updateSessionCount();
+  // 2→1 等形状剧变：force fit，避免中间尺寸写进 ConPTY / 错误 reflow 叠字
+  relayoutGrid({ fitOptions: { force: true } });
+}
+
+function toggleMaximize(id) {
+  const session = sessions.get(id);
+  if (!session || viewMode === "tabs") return;
+  const next = !session.element.classList.contains("maximized");
+  for (const item of sessions.values()) item.element.classList.remove("maximized");
+  session.element.classList.toggle("maximized", next);
+  requestAnimationFrame(() => {
+    scheduleFitSession(session, { force: true });
+    if (!next) scheduleFitAllSessions({ force: true });
+  });
+}
+
+function quoteDroppedPath(filePath, shell) {
+  if (shell === "cmd") {
+    return `"${filePath.replace(/"/g, '""')}"`;
+  }
+  if (shell === "git-bash") {
+    return `'${filePath.replace(/'/g, `'\\''`)}'`;
+  }
+  return `'${filePath.replace(/'/g, "''")}'`;
+}
+
+function shellDisplayTitle(shell, result) {
+  if (shell === "ssh") {
+    return (result && result.ssh && result.ssh.label) || "SSH";
+  }
+  if (shell === "git-bash") return "Git Bash";
+  if (shell === "cmd") return "CMD";
+  return "PowerShell";
+}
+
+function loadSshRecents() {
+  try {
+    const raw = localStorage.getItem(SSH_RECENTS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((item) => item && item.host) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSshRecent(conn) {
+  if (!conn || !conn.host) return;
+  const next = {
+    host: String(conn.host),
+    port: Number(conn.port) || 22,
+    user: String(conn.user || ""),
+    authMethod: String(conn.authMethod || "password"),
+    identityFile: String(conn.identityFile || ""),
+    remoteRoot: String(conn.remoteRoot || ""),
+    launchAgent: REMOTE_AGENT_DEFINITIONS[conn.launchAgent] ? String(conn.launchAgent) : "",
+  };
+  const list = loadSshRecents().filter(
+    (item) =>
+      !(
+        item.host === next.host &&
+        Number(item.port || 22) === next.port &&
+        String(item.user || "") === next.user &&
+        String(item.authMethod || "password") === next.authMethod &&
+        String(item.identityFile || "") === next.identityFile
+      )
+  );
+  list.unshift(next);
+  try {
+    localStorage.setItem(SSH_RECENTS_KEY, JSON.stringify(list.slice(0, SSH_RECENTS_MAX)));
+  } catch {
+    // ignore quota errors
+  }
+  if (typeof renderSshHostList === "function") renderSshHostList();
+}
+
+function syncSshAuthMethodUi() {
+  const method = sshAuthMethod?.value || "password";
+  if (sshAuthPasswordBlock) sshAuthPasswordBlock.hidden = method !== "password";
+  if (sshAuthKeyBlock) sshAuthKeyBlock.hidden = method !== "key";
+  if (sshAuthHint) {
+    if (method === "key") {
+      sshAuthHint.textContent =
+        "秘钥登录：加载私钥文件，并在「秘钥密码」填写私钥加密口令（出现 Enter passphrase for key 时必填，不是服务器登录密码）。";
+    } else if (method === "ask") {
+      sshAuthHint.textContent =
+        "每次询问：连接后在终端内手动输入密码或秘钥口令，不自动填写。";
+    } else {
+      sshAuthHint.textContent =
+        "密码登录：可预填登录密码自动应答；密码仅保存在本次运行的内存中，不会写入最近连接。";
+    }
+  }
+}
+
+function selectedSshAgentId() {
+  if (!sshAgentEnabled?.checked || !sshAgentOptions) return "";
+  return String(sshAgentOptions.querySelector('input[name="launchAgent"]:checked')?.value || "");
+}
+
+function setSshAgentChoiceState(agentId, available, detail) {
+  const choice = sshAgentOptions?.querySelector(`[data-ssh-agent="${agentId}"]`);
+  const input = choice?.querySelector('input[type="radio"]');
+  const status = choice?.querySelector("small");
+  if (!choice || !input || !status) return;
+  input.disabled = !available;
+  if (!available) input.checked = false;
+  choice.classList.toggle("is-available", available);
+  choice.classList.toggle("is-missing", !available);
+  status.textContent = detail || (available ? "可用" : "未安装");
+}
+
+async function refreshSshAgentDetection(preferredAgent = selectedSshAgentId()) {
+  if (!sshAgentEnabled?.checked || !sshAgentOptions) return;
+  const run = ++sshAgentDetectionRun;
+  if (sshAgentDetectionText) sshAgentDetectionText.textContent = "正在检测本机 Agent…";
+  if (sshAgentRefresh) sshAgentRefresh.disabled = true;
+  for (const agentId of Object.keys(REMOTE_AGENT_DEFINITIONS)) {
+    setSshAgentChoiceState(agentId, false, "检测中…");
+  }
+  try {
+    const statuses = await window.terminalDeck.getMcpAgentStatus();
+    if (run !== sshAgentDetectionRun || !sshAgentEnabled.checked) return;
+    const available = [];
+    for (const status of statuses || []) {
+      const isAvailable = Boolean(status.available);
+      setSshAgentChoiceState(status.id, isAvailable, isAvailable ? "已检测到" : "未检测到");
+      if (isAvailable) available.push(status.id);
+    }
+    const next = available.includes(preferredAgent) ? preferredAgent : available[0] || "";
+    const input = next
+      ? sshAgentOptions.querySelector(`input[name="launchAgent"][value="${next}"]`)
+      : null;
+    if (input) input.checked = true;
+    if (sshConnectButtonLabel) {
+      const label = next ? REMOTE_AGENT_DEFINITIONS[next]?.label : "Agent";
+      sshConnectButtonLabel.textContent = `连接并启动 ${label}`;
+    }
+    if (sshAgentDetectionText) {
+      sshAgentDetectionText.textContent = available.length
+        ? `检测到 ${available.length} 个可用 Agent，连接后将在右侧启动`
+        : "没有检测到可启动的 Agent";
+    }
+  } catch {
+    if (run !== sshAgentDetectionRun) return;
+    if (sshAgentDetectionText) sshAgentDetectionText.textContent = "Agent 检测失败，请重新检测";
+    for (const agentId of Object.keys(REMOTE_AGENT_DEFINITIONS)) {
+      setSshAgentChoiceState(agentId, false, "检测失败");
+    }
+  } finally {
+    if (run === sshAgentDetectionRun && sshAgentRefresh) sshAgentRefresh.disabled = false;
+  }
+}
+
+function syncSshAgentLaunchUi(options = {}) {
+  const enabled = Boolean(sshAgentEnabled?.checked);
+  if (sshAgentLaunch) sshAgentLaunch.classList.toggle("is-enabled", enabled);
+  if (sshAgentOptions) sshAgentOptions.hidden = !enabled;
+  if (sshConnectButtonLabel) {
+    const selected = selectedSshAgentId();
+    const label = selected ? REMOTE_AGENT_DEFINITIONS[selected]?.label : "Agent";
+    sshConnectButtonLabel.textContent = enabled ? `连接并启动 ${label}` : "连接";
+  }
+  if (enabled && options.detect !== false) {
+    refreshSshAgentDetection(options.preferredAgent || selectedSshAgentId()).then(() => {
+      if (sshConnectButtonLabel && sshAgentEnabled.checked) {
+        const selected = selectedSshAgentId();
+        const label = selected ? REMOTE_AGENT_DEFINITIONS[selected]?.label : "Agent";
+        sshConnectButtonLabel.textContent = `连接并启动 ${label}`;
+      }
+    });
+  } else if (!enabled) {
+    sshAgentDetectionRun += 1;
+  }
+}
+
+function setSshIdentityPath(filePath) {
+  if (!sshIdentity) return;
+  sshIdentity.value = filePath ? String(filePath) : "";
+  if (sshIdentityClear) sshIdentityClear.hidden = !sshIdentity.value;
+  if (sshIdentityDrop) sshIdentityDrop.classList.toggle("has-file", Boolean(sshIdentity.value));
+}
+
+function setSshFormError(message) {
+  if (!sshFormError) return;
+  if (!message) {
+    sshFormError.hidden = true;
+    sshFormError.textContent = "";
+    return;
+  }
+  sshFormError.hidden = false;
+  sshFormError.textContent = message;
+}
+
+function fillSshForm(conn) {
+  if (!sshHost) return;
+  sshHost.value = conn && conn.host ? String(conn.host) : "";
+  if (sshPort) sshPort.value = String((conn && Number(conn.port)) || 22);
+  if (sshUser) sshUser.value = conn && conn.user ? String(conn.user) : "";
+  if (sshPassword) sshPassword.value = "";
+  if (sshPassphrase) sshPassphrase.value = "";
+  if (sshRemoteRoot) {
+    sshRemoteRoot.value = conn && conn.remoteRoot ? String(conn.remoteRoot) : "";
+  }
+  const method =
+    conn && conn.authMethod
+      ? String(conn.authMethod)
+      : conn && conn.identityFile
+        ? "key"
+        : "password";
+  if (sshAuthMethod) sshAuthMethod.value = ["password", "key", "ask"].includes(method) ? method : "password";
+  setSshIdentityPath(conn && conn.identityFile ? String(conn.identityFile) : "");
+  syncSshAuthMethodUi();
+  const preferredAgent = REMOTE_AGENT_DEFINITIONS[conn?.launchAgent] ? String(conn.launchAgent) : "";
+  if (sshAgentEnabled) sshAgentEnabled.checked = Boolean(preferredAgent);
+  if (preferredAgent && sshAgentOptions) {
+    const input = sshAgentOptions.querySelector(
+      `input[name="launchAgent"][value="${preferredAgent}"]`
+    );
+    if (input) input.checked = true;
+  }
+  syncSshAgentLaunchUi({ preferredAgent });
+  setSshFormError("");
+}
+
+function renderSshRecents() {
+  if (!sshRecents || !sshRecentsList) return;
+  const list = loadSshRecents();
+  sshRecentsList.innerHTML = "";
+  if (!list.length) {
+    sshRecents.hidden = true;
+    return;
+  }
+  sshRecents.hidden = false;
+  for (const item of list) {
+    const port = Number(item.port) || 22;
+    const target = item.user ? `${item.user}@${item.host}` : item.host;
+    const label = port === 22 ? target : `${target}:${port}`;
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ssh-recent-item";
+    const method = item.authMethod || (item.identityFile ? "key" : "password");
+    const authTitle =
+      method === "key" && item.identityFile
+        ? `秘钥: ${item.identityFile}`
+        : method === "ask"
+          ? "每次询问"
+          : "密码登录";
+    const recentAgent = REMOTE_AGENT_DEFINITIONS[item.launchAgent]?.label;
+    btn.title = recentAgent ? `${authTitle} · 启动 ${recentAgent}` : authTitle;
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "ssh-recent-label";
+    labelSpan.textContent = label;
+    btn.appendChild(labelSpan);
+    if (method === "key" || item.identityFile) {
+      const keySpan = document.createElement("span");
+      keySpan.className = "ssh-recent-key";
+      keySpan.title = "使用私钥";
+      keySpan.textContent = "🔑";
+      btn.appendChild(keySpan);
+    }
+    btn.addEventListener("click", () => fillSshForm(item));
+    li.appendChild(btn);
+    sshRecentsList.appendChild(li);
+  }
+}
+
+function closeSshDialog(result) {
+  if (!sshDialog) return;
+  sshDialog.hidden = true;
+  sshDialog.classList.remove("is-open");
+  if (sshPassword) sshPassword.value = "";
+  if (sshPassphrase) sshPassphrase.value = "";
+  const resolve = sshDialogResolve;
+  sshDialogResolve = null;
+  if (resolve) resolve(result);
+}
+
+function openSshDialog() {
+  return new Promise((resolve) => {
+    if (!sshDialog || !sshForm) {
+      resolve(null);
+      return;
+    }
+    if (sshDialogResolve) {
+      // 已有未完成的对话框：先取消上一次
+      closeSshDialog(null);
+    }
+    sshDialogResolve = resolve;
+    const recents = loadSshRecents();
+    fillSshForm(recents[0] || { host: "", port: 22, user: "", identityFile: "" });
+    renderSshRecents();
+    sshDialog.hidden = false;
+    // 下一帧再加 is-open，触发过渡
+    requestAnimationFrame(() => {
+      sshDialog.classList.add("is-open");
+      if (sshHost) sshHost.focus();
+    });
+  });
+}
+
+async function promptSshConnection() {
+  try {
+    const probe = await window.terminalDeck.probeSsh();
+    if (!probe || !probe.ok) {
+      window.alert(
+        "未找到 OpenSSH 客户端。请在 Windows 设置 → 系统 → 可选功能中安装 OpenSSH 客户端。"
+      );
+      return null;
+    }
+  } catch {
+    window.alert("无法检测 OpenSSH 客户端，请检查应用安装是否完整。");
+    return null;
+  }
+  return openSshDialog();
+}
+
+/** 侧栏 / 空状态的显式 SSH 入口 */
+function connectSshSession() {
+  if (shellSelect) shellSelect.value = "ssh";
+  return createSession({ shell: "ssh" });
+}
+
+function readSshFormValues() {
+  const host = String(sshHost?.value || "").trim();
+  let port = Number(sshPort?.value);
+  if (!Number.isFinite(port) || port <= 0) port = 22;
+  const user = String(sshUser?.value || "").trim();
+  const authMethod = String(sshAuthMethod?.value || "password");
+  const password = String(sshPassword?.value || "");
+  const passphrase = String(sshPassphrase?.value || "");
+  const remoteRoot = String(sshRemoteRoot?.value || "").trim();
+  const identityFile = String(sshIdentity?.value || "").trim();
+  const launchAgent = selectedSshAgentId();
+  return {
+    host,
+    port,
+    user,
+    authMethod,
+    password: authMethod === "password" && password ? password : undefined,
+    passphrase: authMethod === "key" && passphrase ? passphrase : undefined,
+    remoteRoot: remoteRoot || undefined,
+    identityFile: authMethod === "key" || (authMethod === "ask" && identityFile) ? identityFile || undefined : undefined,
+    launchAgent: launchAgent || undefined,
+  };
+}
+
+function refreshRemoteAgentOptions(preferredId = null) {
+  if (!remoteAgentSelect) return;
+  const previous = preferredId == null ? remoteAgentSelect.value : String(preferredId || "");
+  remoteAgentSelect.innerHTML = "";
+  const localOption = document.createElement("option");
+  localOption.value = "";
+  localOption.textContent = "本机";
+  remoteAgentSelect.appendChild(localOption);
+  for (const session of sessions.values()) {
+    if (session.shell !== "ssh" || !session.ssh?.bridgeReady) continue;
+    const option = document.createElement("option");
+    option.value = session.id;
+    option.textContent = session.ssh.label || `SSH ${session.id}`;
+    remoteAgentSelect.appendChild(option);
+  }
+  remoteAgentSelect.disabled = remoteAgentSelect.options.length <= 1;
+  if ([...remoteAgentSelect.options].some((option) => option.value === previous)) {
+    remoteAgentSelect.value = previous;
+  } else {
+    remoteAgentSelect.value = "";
+  }
+  window.terminalDeck.setMcpRemoteSession(remoteAgentSelect.value).catch(() => {});
+}
+
+async function launchAgentForRemoteSession(remoteSession, agentId) {
+  const agent = REMOTE_AGENT_DEFINITIONS[agentId];
+  if (!remoteSession || !agent) return null;
+  if (!remoteSession.ssh?.bridgeReady) {
+    window.alert("SSH 已连接，但远端 Agent 桥未就绪。请检查用户名和远端根目录后重试。");
+    return null;
+  }
+  const remoteLabel = remoteSession.ssh?.label || "SSH 远端";
+  const remoteStatus = remoteSession.element.querySelector(".pane-status");
+  if (remoteStatus) remoteStatus.title = `正在配置并启动 ${agent.label}`;
+  try {
+    await window.terminalDeck.setMcpRemoteSession(remoteSession.id);
+    const installed = await window.terminalDeck.installMcpForAgent(agent.id);
+    if (!installed?.ok) throw new Error(installed?.error || `${agent.label} MCP 配置失败`);
+    const agentSession = await createSession({
+      shell: "powershell",
+      remoteSessionId: remoteSession.id,
+      startCommand: agent.command,
+      agent: {
+        id: agent.id,
+        label: agent.label,
+        remoteLabel,
+      },
+    });
+    if (!agentSession) throw new Error(`${agent.label} 终端创建失败`);
+    if (remoteStatus) remoteStatus.title = `远端已连接 · ${agent.label} 已在右侧启动`;
+    return agentSession;
+  } catch (error) {
+    if (remoteStatus) remoteStatus.title = `${agent.label} 启动失败`;
+    window.alert(
+      `SSH 已连接，但 ${agent.label} 未能自动启动：\n${error?.message || error}\n\n你可以在顶部“Agent MCP”中重试。`
+    );
+    return null;
+  }
+}
+
+async function createSession(options = {}) {
+  // 启动时默认本地终端；options.shell 可强制指定（宠物请求等仍走下拉当前值）
+  let shell = options.shell || shellSelect.value;
+  let ssh = options.ssh || null;
+
+  if (shell === "ssh" && !ssh) {
+    ssh = await promptSshConnection();
+    if (!ssh) return; // 用户取消
+  }
+  const launchAgent = shell === "ssh" && REMOTE_AGENT_DEFINITIONS[ssh?.launchAgent]
+    ? String(ssh.launchAgent)
+    : "";
+  const sshConnection = ssh ? { ...ssh } : null;
+  if (sshConnection) delete sshConnection.launchAgent;
+
+  let result;
+  try {
+    result = await window.terminalDeck.create({
+      shell,
+      cwd: options.cwd || defaultWorkspace,
+      cols: 100,
+      rows: 30,
+      ssh: shell === "ssh" ? sshConnection : undefined,
+      remoteSessionId:
+        shell === "ssh"
+          ? undefined
+          : options.remoteSessionId || remoteAgentSelect?.value || undefined,
+    });
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    window.alert(`创建终端失败：${message}`);
+    return;
+  }
+
+  if (result && result.error) {
+    window.alert(result.error);
+    return;
+  }
+  if (!result || !result.id) {
+    window.alert("创建终端失败：未知错误");
+    return;
+  }
+
+  if (shell === "ssh" && ssh) {
+    saveSshRecent({
+      host: ssh.host,
+      port: ssh.port,
+      user: ssh.user,
+      authMethod: ssh.authMethod || (result.ssh && result.ssh.authMethod) || "password",
+      identityFile: ssh.identityFile || (result.ssh && result.ssh.identityFile) || "",
+      remoteRoot: ssh.remoteRoot || (result.ssh && result.ssh.remoteRoot) || "",
+      launchAgent,
+    });
+  }
+
+  const number = sequence++;
+  const title = options.agent
+    ? `${options.agent.label} · 远端开发`
+    : options.title
+    ? String(options.title)
+    : shellDisplayTitle(shell, result);
+  const pathLabel =
+    options.agent
+      ? `MCP → ${options.agent.remoteLabel}`
+      : shell === "ssh" && result.ssh
+      ? result.ssh.label
+      : result.cwd || options.cwd || defaultWorkspace;
+
+  const element = document.createElement("section");
+  element.className = "terminal-pane";
+  if (shell === "ssh") element.classList.add("is-ssh");
+  if (options.agent || options.launchpadAgent) element.classList.add("is-agent");
+  element.dataset.terminalId = result.id;
+  element.innerHTML = `
+    <div class="pane-header">
+      <span class="pane-index">${String(number).padStart(2, "0")}</span>
+      <span class="pane-title"></span>
+      <span class="agent-badge" hidden><span class="agent-badge-dot" aria-hidden="true"></span><span class="agent-badge-text"></span></span>
+      <span class="pane-path"></span>
+      <div class="pane-actions">
+        <span class="pane-status" title="运行中"></span>
+        <button class="icon-button redraw" type="button" title="重绘终端（Ctrl+L）" aria-label="重绘终端">
+          <span class="icon-glyph" aria-hidden="true">↻</span>
+        </button>
+        <button class="icon-button maximize" type="button" title="放大或还原终端" aria-label="放大或还原">
+          <span class="icon-glyph" aria-hidden="true">□</span>
+        </button>
+        <button class="icon-button close" type="button" title="关闭终端" aria-label="关闭">
+          <span class="icon-glyph" aria-hidden="true">×</span>
+        </button>
+      </div>
+    </div>
+    <div class="terminal-host"></div>
+    <div class="resize-handle resize-e" data-dir="e" title="拖动调整宽度"></div>
+    <div class="resize-handle resize-s" data-dir="s" title="拖动调整高度"></div>
+    <div class="resize-handle resize-se" data-dir="se" title="拖动调整大小"></div>
+  `;
+  const paneTitleEl = element.querySelector(".pane-title");
+  paneTitleEl.textContent = title;
+  paneTitleEl.title = title;
+  const panePathEl = element.querySelector(".pane-path");
+  panePathEl.textContent = pathLabel;
+  panePathEl.title = pathLabel;
+  grid.appendChild(element);
+  // 标签页模式下非当前终端是 display:none；xterm 打开前先让新终端可见，保证字符测量正确
+  if (viewMode === "tabs") {
+    for (const item of sessions.values()) item.element.classList.remove("active");
+    element.classList.add("active");
+  }
+
+  // ConPTY 必须声明 windowsPty：否则分屏变宽时 xterm 会 Unix 式 reflow，中文/TUI 必乱
+  const windowsPty =
+    typeof window.terminalDeck.getWindowsPty === "function"
+      ? window.terminalDeck.getWindowsPty()
+      : null;
+
+  const terminal = new Terminal({
+    cursorBlink: true,
+    cursorStyle: "bar",
+    fontFamily:
+      '"Cascadia Mono", Consolas, "Sarasa Mono SC", "Microsoft YaHei Mono", NSimSun, monospace',
+    fontSize: 14,
+    lineHeight: 1.12,
+    letterSpacing: 0,
+    rescaleOverlappingGlyphs: true,
+    scrollback: 50000,
+    allowProposedApi: false,
+    // 图片皮肤需要半透明背景；纯色皮肤仍用主题里的不透明色
+    allowTransparency: true,
+    ...(windowsPty ? { windowsPty } : {}),
+    theme: effectiveXtermTheme(currentXtermTheme) || {
+      background: "#101316",
+      foreground: "#e1e7eb",
+      cursor: "#73d5ad",
+      cursorAccent: "#101316",
+      selectionBackground: "#345d70",
+      black: "#181b1e",
+      red: "#df6b6b",
+      green: "#73c991",
+      yellow: "#d7ba7d",
+      blue: "#75a7d8",
+      magenta: "#c48ad6",
+      cyan: "#66c2c2",
+      white: "#d4d4d4",
+      brightBlack: "#6d7780",
+      brightRed: "#f07b7b",
+      brightGreen: "#8bd6a4",
+      brightYellow: "#e4c98c",
+      brightBlue: "#8bb9e4",
+      brightMagenta: "#d29ae0",
+      brightCyan: "#7bd1d1",
+      brightWhite: "#ffffff",
+    },
+  });
+  const fitAddon = new FitAddon.FitAddon();
+  terminal.loadAddon(fitAddon);
+  terminal.open(element.querySelector(".terminal-host"));
+
+  const session = {
+    id: result.id,
+    shell,
+    ssh: result.ssh || null,
+    agent: options.agent || null,
+    element,
+    terminal,
+    fitAddon,
+    resizeObserver: null,
+    glassFilter: createGlassOutputFilter(),
+    agentTracker: createSessionAgentTracker(),
+    agentState: "none",
+    agentNotifiedAt: 0,
+    customTitle: "",
+    baseTitle: title,
+    tabEl: null,
+  };
+  sessions.set(result.id, session);
+  renderTabs();
+  if (shell === "ssh") refreshRemoteAgentOptions(result.id);
+  bindResizeHandles(session);
+  // 每新建一个终端：立刻按数量重算行列，全部铺满窗口
+  relayoutGrid();
+
+  // 双保险：图片皮肤下吞掉 TUI 的 OSC 11 设背景，避免盖住通透
+  if (typeof terminal.registerOscHandler === "function") {
+    terminal.registerOscHandler(11, (data) => {
+      if (!isCurrentImageSkin()) return false;
+      const payload = String(data || "").trim();
+      if (payload === "?" || payload.startsWith("?")) return false;
+      applyXtermGlassByFocus();
+      return true;
+    });
+  }
+
+  terminal.onData((data) => handleTerminalUserInput(session, data));
+  terminal.attachCustomKeyEventHandler((event) => {
+    if (event.type !== "keydown") return true;
+    if ((event.ctrlKey && event.shiftKey && event.code === "KeyC") || (event.ctrlKey && event.code === "Insert")) {
+      if (!terminal.hasSelection()) return true;
+      copySelection(session);
+      return false;
+    }
+    if ((event.ctrlKey && event.shiftKey && event.code === "KeyV") || (event.shiftKey && event.code === "Insert")) {
+      pasteClipboard(session);
+      return false;
+    }
+    if (event.ctrlKey && event.shiftKey && event.code === "KeyA") {
+      terminal.selectAll();
+      return false;
+    }
+    // Agent 启动台快捷键交给窗口级处理，终端本身不消费
+    if (event.ctrlKey && event.shiftKey && event.code === "KeyL") return false;
+    // 标签切换：多于一个标签时 Ctrl+Tab 由窗口处理；Ctrl+数字仅在有对应标签时拦截
+    if (event.ctrlKey && !event.altKey && event.code === "Tab" && sessions.size > 1) return false;
+    if (
+      event.ctrlKey && !event.shiftKey && !event.altKey &&
+      /^Digit[1-9]$/.test(event.code) && tabIdForDigit(Number(event.code.slice(-1)))
+    ) return false;
+    return true;
+  });
+
+  session.lastPtyCols = 0;
+  session.lastPtyRows = 0;
+  session.lastOutputAt = 0;
+  session._fitTimer = 0;
+  session._redrawTimer = 0;
+  session.resizeObserver = new ResizeObserver(() => {
+    if (isResizingPane) return;
+    // 防抖：新建邻格时 DOM 会连跳几次，合并成一次 fit
+    scheduleFitSession(session);
+  });
+  const terminalHost = element.querySelector(".terminal-host");
+  session.resizeObserver.observe(terminalHost);
+
+  let dragDepth = 0;
+  element.addEventListener("dragenter", (event) => {
+    event.preventDefault();
+    dragDepth += 1;
+    element.classList.add("drop-target");
+  });
+  element.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  });
+  element.addEventListener("dragleave", (event) => {
+    event.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) element.classList.remove("drop-target");
+  });
+  element.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dragDepth = 0;
+    element.classList.remove("drop-target");
+
+    const paths = [...event.dataTransfer.files]
+      .map((file) => window.terminalDeck.getPathForFile(file))
+      .filter(Boolean);
+    if (!paths.length) return;
+
+    // SSH 远程会话：粘贴本地路径通常无意义，仍允许（用户可能 scp/路径参考）
+    const pathShell = shell === "ssh" ? "git-bash" : shell;
+    const input = paths.map((filePath) => quoteDroppedPath(filePath, pathShell)).join(" ");
+    setActive(result.id);
+    window.terminalDeck.write(result.id, input);
+  });
+
+  element.addEventListener("mousedown", () => setActive(result.id));
+  terminalHost.addEventListener("contextmenu", (event) => {
+    setActive(result.id);
+    showContextMenu(event, result.id);
+  });
+  element.querySelector(".maximize").addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleMaximize(result.id);
+  });
+  element.querySelector(".redraw").addEventListener("click", (event) => {
+    event.stopPropagation();
+    setActive(result.id);
+    redrawSession(session, { notifyProcess: true });
+  });
+  element.querySelector(".close").addEventListener("click", (event) => {
+    event.stopPropagation();
+    requestCloseSession(result.id);
+  });
+  element.querySelector(".pane-header").addEventListener("dblclick", () => toggleMaximize(result.id));
+
+  updateSessionCount();
+  setActive(result.id);
+  // Agent 启动前先把真实网格尺寸同步给 ConPTY。否则进程会先按创建时的
+  // 100×30 绘制，随后再缩放到面板宽度，首屏就可能留下两套布局。
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+  fitSession(session, { force: true });
+  await window.terminalDeck.attach(result.id);
+  if (options.startCommand) {
+    window.setTimeout(() => {
+      if (!sessions.has(result.id)) return;
+      session.agentTracker?.input(`${options.startCommand}\r`);
+      window.terminalDeck.write(result.id, `${options.startCommand}\r`);
+    }, 120);
+  }
+  // attach 后再 fit 一次，确保 PTY 行列与网格一致
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => scheduleFitAllSessions());
+  });
+  if (shell === "ssh" && launchAgent) {
+    await launchAgentForRemoteSession(session, launchAgent);
+  }
+  return session;
+}
+
+window.terminalDeck.onData(({ id, data }) => {
+  const session = sessions.get(id);
+  if (!session) return;
+  session.agentTracker?.feed(data);
+  session.lastOutputAt = performance.now();
+  const stripBg = isCurrentImageSkin();
+  const filtered =
+    typeof session.glassFilter === "function" ? session.glassFilter(data, stripBg) : data;
+  if (filtered) {
+    session.terminal.write(filtered);
+  }
+});
+
+window.terminalDeck.onExit(({ id, exitCode }) => {
+  const session = sessions.get(id);
+  if (!session) return;
+  const status = session.element.querySelector(".pane-status");
+  status.classList.add("exited");
+  status.title = `进程已退出，代码 ${exitCode}`;
+  session.terminal.write(`\r\n\x1b[33m[进程已退出，代码 ${exitCode}]\x1b[0m\r\n`);
+  session.agentTracker?.markExited(exitCode);
+  refreshAgentStatuses();
+});
+
+/* ── 标签页：每个终端一个标签；「标签页」视图只显示当前终端 ── */
+const TAB_DRAG_TYPE = "application/x-terminal-deck-tab";
+let draggingTabId = null;
+
+function tabIdForDigit(digit) {
+  return window.TabModel ? window.TabModel.idForShortcut([...sessions.keys()], digit) : null;
+}
+
+function cycleTab(delta) {
+  if (!window.TabModel) return;
+  const next = window.TabModel.cycleId([...sessions.keys()], activeId, delta);
+  if (next) setActive(next);
+}
+
+function sessionPaneTitle(session) {
+  return session.baseTitle || session.element.querySelector(".pane-title")?.textContent || "终端";
+}
+
+function createTabElement(session) {
+  const tab = document.createElement("div");
+  tab.className = "tab";
+  tab.setAttribute("role", "tab");
+  tab.draggable = true;
+  tab.dataset.sessionId = session.id;
+  tab.innerHTML = `
+    <span class="tab-icon" aria-hidden="true"></span>
+    <span class="tab-title"></span>
+    <span class="tab-status" hidden><span class="tab-status-dot" aria-hidden="true"></span><span class="tab-status-text"></span></span>
+    <button class="tab-close" type="button" title="关闭标签（中键单击也可关闭）" aria-label="关闭标签">×</button>
+  `;
+  tab.addEventListener("click", (event) => {
+    if (event.target.closest(".tab-close") || event.target.closest(".tab-rename-input")) return;
+    setActive(session.id);
+  });
+  tab.querySelector(".tab-close").addEventListener("click", (event) => {
+    event.stopPropagation();
+    requestCloseSession(session.id);
+  });
+  // 中键关闭；mousedown 阻止默认的自动滚动
+  tab.addEventListener("mousedown", (event) => {
+    if (event.button === 1) event.preventDefault();
+  });
+  tab.addEventListener("auxclick", (event) => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    requestCloseSession(session.id);
+  });
+  tab.addEventListener("dblclick", (event) => {
+    if (event.target.closest(".tab-close")) return;
+    startTabRename(session);
+  });
+  tab.addEventListener("dragstart", (event) => {
+    draggingTabId = session.id;
+    tab.classList.add("is-dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(TAB_DRAG_TYPE, session.id);
+  });
+  tab.addEventListener("dragend", () => {
+    draggingTabId = null;
+    tab.classList.remove("is-dragging");
+    for (const el of tabList.querySelectorAll(".drop-before, .drop-after")) {
+      el.classList.remove("drop-before", "drop-after");
+    }
+  });
+  tab.addEventListener("dragover", (event) => {
+    if (!draggingTabId || draggingTabId === session.id) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const rect = tab.getBoundingClientRect();
+    const after = event.clientX > rect.left + rect.width / 2;
+    tab.classList.toggle("drop-after", after);
+    tab.classList.toggle("drop-before", !after);
+  });
+  tab.addEventListener("dragleave", () => tab.classList.remove("drop-before", "drop-after"));
+  tab.addEventListener("drop", (event) => {
+    if (!draggingTabId || draggingTabId === session.id) return;
+    event.preventDefault();
+    const after = tab.classList.contains("drop-after");
+    tab.classList.remove("drop-before", "drop-after");
+    reorderSessions(draggingTabId, session.id, after);
+  });
+  return tab;
+}
+
+function updateTab(session) {
+  const tab = session?.tabEl;
+  if (!tab || !window.TabModel) return;
+  const state = session.agentState || "none";
+  const agentId = session.agentTracker?.snapshot.agentId || "";
+  const label = window.TabModel.tabLabel(
+    {
+      customTitle: session.customTitle,
+      agentId,
+      agentState: state,
+      paneTitle: sessionPaneTitle(session),
+      shell: session.shell,
+    },
+    window.AgentStatus?.AGENT_LABELS || {}
+  );
+  tab.querySelector(".tab-icon").textContent = label.icon;
+  const titleEl = tab.querySelector(".tab-title");
+  if (titleEl) titleEl.textContent = label.text;
+  tab.classList.toggle("is-agent", label.isAgent);
+
+  const statusEl = tab.querySelector(".tab-status");
+  const showStatus = label.isAgent && state !== "none";
+  statusEl.hidden = !showStatus;
+  let stateText = window.AgentStatus?.STATE_LABELS?.[state] || "";
+  if (state === "exited") {
+    const code = session.agentTracker?.snapshot.exitCode;
+    stateText = code == null ? "已退出" : `已退出 ${code}`;
+  }
+  if (showStatus) {
+    statusEl.dataset.state = state;
+    statusEl.querySelector(".tab-status-text").textContent = stateText;
+  }
+  const isActive = session.id === activeId;
+  const attention = window.TabModel.tabAttention(state, isActive);
+  tab.classList.toggle("needs-approval", attention === "approval");
+  tab.classList.toggle("needs-input", attention === "waiting");
+  tab.classList.toggle("active", isActive);
+  tab.setAttribute("aria-selected", isActive ? "true" : "false");
+
+  const index = [...sessions.keys()].indexOf(session.id);
+  const shortcut = index >= 0 && index < 8 ? ` · Ctrl+${index + 1}` : "";
+  const path = session.element.querySelector(".pane-path")?.textContent || "";
+  tab.title = [`${label.text}${showStatus ? ` · ${stateText}` : ""}${shortcut}`, path, "双击重命名 · 拖动排序"]
+    .filter(Boolean)
+    .join("\n");
+  updateSessionListRow(session, label, showStatus ? state : "none", stateText, isActive, path);
+}
+
+function updateTabsActive() {
+  for (const session of sessions.values()) updateTab(session);
+  updateStatusBar();
+  const active = activeId ? sessions.get(activeId) : null;
+  active?.tabEl?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+/** 按 sessions 顺序重建标签条（新增 / 关闭 / 排序时调用；状态变化只走 updateTab） */
+function renderTabs() {
+  if (!tabList || !tabBar) return;
+  const fragment = document.createDocumentFragment();
+  for (const session of sessions.values()) {
+    if (!session.tabEl) session.tabEl = createTabElement(session);
+    fragment.appendChild(session.tabEl);
+  }
+  tabList.replaceChildren(fragment);
+  tabBar.hidden = sessions.size === 0;
+  tabBar.classList.toggle("is-empty", sessions.size === 0);
+  renderSessionList();
+  updateTabsActive();
+}
+
+/** 拖动排序：同时调整 sessions 顺序与网格 DOM 顺序，保证网格、Alt/Ctrl+数字与标签一致 */
+function reorderSessions(fromId, toId, placeAfter) {
+  if (!window.TabModel) return;
+  const order = window.TabModel.reorderIds([...sessions.keys()], fromId, toId, placeAfter);
+  const entries = order.map((id) => [id, sessions.get(id)]).filter(([, value]) => value);
+  sessions.clear();
+  for (const [id, value] of entries) {
+    sessions.set(id, value);
+    grid.appendChild(value.element);
+  }
+  renderTabs();
+  relayoutGrid();
+}
+
+function startTabRename(session) {
+  const tab = session.tabEl;
+  const titleEl = tab?.querySelector(".tab-title");
+  if (!titleEl || tab.querySelector(".tab-rename-input")) return;
+  const input = document.createElement("input");
+  input.className = "tab-rename-input";
+  input.type = "text";
+  input.maxLength = 40;
+  input.value = titleEl.textContent || "";
+  input.placeholder = "留空恢复默认名称";
+  input.setAttribute("aria-label", "重命名标签");
+  tab.draggable = false;
+  titleEl.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    if (commit) {
+      const value = window.TabModel.sanitizeTabTitle(input.value);
+      session.customTitle = value;
+      const paneTitle = session.element.querySelector(".pane-title");
+      if (paneTitle) {
+        paneTitle.textContent = value || sessionPaneTitle(session);
+        paneTitle.title = paneTitle.textContent;
+      }
+    }
+    input.replaceWith(titleEl);
+    tab.draggable = true;
+    updateTab(session);
+    if (session.id === activeId) session.terminal.focus();
+  };
+  input.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Enter") finish(true);
+    if (event.key === "Escape") finish(false);
+  });
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("click", (event) => event.stopPropagation());
+  input.addEventListener("dblclick", (event) => event.stopPropagation());
+}
+
+/** 关闭前确认：Agent 仍在运行 / 等待时提示 */
+function requestCloseSession(id) {
+  const session = sessions.get(id);
+  if (!session) return;
+  const state = session.agentState || "none";
+  if (window.TabModel?.shouldConfirmClose(state)) {
+    const name = window.AgentStatus?.AGENT_LABELS?.[session.agentTracker?.snapshot.agentId] || "Agent";
+    const label = window.AgentStatus?.STATE_LABELS?.[state] || "运行中";
+    if (!window.confirm(`${name} 仍在${label === "运行中" ? "运行" : `「${label}」`}，确定关闭这个标签吗？\n关闭后终端进程会被结束。`)) {
+      return;
+    }
+  }
+  closeSession(id);
+}
+
+function applyViewMode(mode, { persist = true } = {}) {
+  viewMode = window.TabModel ? window.TabModel.resolveViewMode(mode) : "grid";
+  if (persist) {
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, viewMode);
+    } catch {
+      // ignore
+    }
+  }
+  const tabs = viewMode === "tabs";
+  if (tabs) for (const session of sessions.values()) session.element.classList.remove("maximized");
+  grid.classList.toggle("view-tabs", tabs);
+  document.body.classList.toggle("view-tabs", tabs);
+  if (layoutSelect) {
+    layoutSelect.disabled = tabs;
+    layoutSelect.title = tabs ? "布局仅在网格模式下生效" : "布局方式";
+  }
+  for (const button of viewModeToggle?.querySelectorAll("[data-view-mode]") || []) {
+    const pressed = button.dataset.viewMode === viewMode;
+    button.classList.toggle("active", pressed);
+    button.setAttribute("aria-pressed", pressed ? "true" : "false");
+  }
+  relayoutGrid({ fitOptions: { force: true } });
+  updateStatusBar();
+  const active = activeId ? sessions.get(activeId) : null;
+  if (active) active.terminal.focus();
+}
+
+viewModeToggle?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-view-mode]");
+  if (button) applyViewMode(button.dataset.viewMode);
+});
+// 鼠标滚轮横向滚动标签条
+tabList?.addEventListener("wheel", (event) => {
+  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+  tabList.scrollLeft += event.deltaY;
+  event.preventDefault();
+}, { passive: false });
+applyViewMode(viewMode, { persist: false });
+
+/* ── 侧栏会话列表 / 远程主机 / 状态栏 / 设置面板 ── */
+function renderSessionList() {
+  if (!sessionList) return;
+  const fragment = document.createDocumentFragment();
+  for (const session of sessions.values()) {
+    if (!session.listEl) session.listEl = createSessionListRow(session);
+    fragment.appendChild(session.listEl);
+  }
+  sessionList.replaceChildren(fragment);
+  if (sessionListCount) sessionListCount.textContent = String(sessions.size);
+  if (sessionListEmpty) sessionListEmpty.hidden = sessions.size > 0;
+}
+
+function createSessionListRow(session) {
+  const li = document.createElement("li");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "session-row";
+  button.innerHTML = `
+    <span class="session-row-icon" aria-hidden="true"></span>
+    <span class="session-row-main">
+      <span class="session-row-title"></span>
+      <span class="session-row-sub"></span>
+    </span>
+    <span class="session-row-state" hidden><span class="session-row-dot" aria-hidden="true"></span></span>
+  `;
+  button.addEventListener("click", () => setActive(session.id));
+  button.addEventListener("auxclick", (event) => {
+    if (event.button === 1) requestCloseSession(session.id);
+  });
+  li.appendChild(button);
+  return li;
+}
+
+function updateSessionListRow(session, label, state, stateText, isActive, path) {
+  const row = session.listEl?.querySelector(".session-row");
+  if (!row) return;
+  row.querySelector(".session-row-icon").textContent = label.icon;
+  row.querySelector(".session-row-title").textContent = label.text;
+  const sub = state !== "none" ? stateText : path;
+  row.querySelector(".session-row-sub").textContent = sub || "";
+  const stateEl = row.querySelector(".session-row-state");
+  stateEl.hidden = state === "none";
+  stateEl.dataset.state = state;
+  row.classList.toggle("active", isActive);
+  row.classList.toggle("is-agent", label.isAgent);
+  row.classList.toggle("needs-approval", state === "approval");
+  row.title = `${label.text}${state !== "none" ? ` · ${stateText}` : ""}\n${path || ""}`;
+}
+
+function renderSshHostList() {
+  if (!sshHostList) return;
+  const recents = loadSshRecents().slice(0, 5);
+  const hostSection = document.getElementById("sshHostSection");
+  if (hostSection) hostSection.hidden = recents.length === 0;
+  sshHostList.replaceChildren(
+    ...recents.map((item) => {
+      const li = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ssh-host-row";
+      const label = `${item.user ? `${item.user}@` : ""}${item.host}${Number(item.port) && Number(item.port) !== 22 ? `:${item.port}` : ""}`;
+      button.innerHTML = `<span class="ssh-host-dot" aria-hidden="true"></span><span class="ssh-host-label"></span>`;
+      button.querySelector(".ssh-host-label").textContent = label;
+      button.title = `连接 ${label}${item.authMethod === "key" ? "（私钥）" : ""}`;
+      button.addEventListener("click", () => {
+        saveSshRecent(item); // 置顶，SSH 对话框会预填这台主机
+        connectSshSession();
+      });
+      li.appendChild(button);
+      return li;
+    })
+  );
+  sshHostList.hidden = recents.length === 0;
+}
+
+function setStatusText(el, text) {
+  if (el && el.textContent !== text) {
+    el.textContent = text;
+    el.title = text;
+  }
+}
+
+/** 底部状态栏：当前目录 · 分支 · Agent 汇总 · 终端数 · 视图 · 终端类型 */
+function updateStatusBar() {
+  const active = activeId ? sessions.get(activeId) : null;
+  const path = active
+    ? active.element.querySelector(".pane-path")?.textContent || ""
+    : defaultWorkspace;
+  setStatusText(statusPath, path || "—");
+  if (statusBranch) {
+    let branch = "";
+    try {
+      branch = !active && gitBranchState.isRepo ? gitBranchState.current || "" : "";
+    } catch {
+      branch = ""; // 启动早期 gitBranchState 尚未初始化
+    }
+    statusBranch.hidden = !branch;
+    setStatusText(statusBranch, branch ? `⎇ ${branch}` : "");
+  }
+  setStatusText(statusView, viewMode === "tabs" ? "标签页" : "网格");
+  const shellLabel = active
+    ? active.shell === "ssh" ? "SSH" : shellDisplayTitle(active.shell, {})
+    : shellSelect?.selectedOptions?.[0]?.textContent || "PowerShell";
+  setStatusText(statusShell, shellLabel);
+}
+
+function showSettingsMenu() {
+  if (!settingsMenu || !settingsButton) return;
+  hideContextMenu();
+  settingsMenu.hidden = false;
+  const anchor = settingsButton.getBoundingClientRect();
+  const width = settingsMenu.offsetWidth || 300;
+  settingsMenu.style.left = `${Math.round(Math.max(8, anchor.right - width))}px`;
+  settingsMenu.style.top = `${Math.round(anchor.bottom + 6)}px`;
+  settingsButton.classList.add("active");
+  settingsButton.setAttribute("aria-expanded", "true");
+}
+
+function hideSettingsMenu() {
+  if (!settingsMenu || settingsMenu.hidden) return;
+  settingsMenu.hidden = true;
+  hideMcpAgentMenu();
+  settingsButton?.classList.remove("active");
+  settingsButton?.setAttribute("aria-expanded", "false");
+}
+
+settingsButton?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (settingsMenu && !settingsMenu.hidden) hideSettingsMenu();
+  else showSettingsMenu();
+});
+shellSelect?.addEventListener("change", updateStatusBar);
+window.addEventListener("resize", () => {
+  if (settingsMenu && !settingsMenu.hidden) showSettingsMenu();
+});
+
+/* ── Agent 状态显示：每个终端一个轻量 tracker，定时评估（不在每个数据块里做重活） ── */
+const AGENT_NOTIFY_KEY = "terminal-deck-agent-notify";
+const AGENT_STATUS_TICK_MS = 500;
+const AGENT_NOTIFY_COOLDOWN_MS = 15_000;
+const agentSummaryChip = document.getElementById("agentSummary");
+
+function createSessionAgentTracker() {
+  return window.AgentStatus ? window.AgentStatus.createAgentStatusTracker() : null;
+}
+
+function isAgentNotifyEnabled() {
+  try {
+    return localStorage.getItem(AGENT_NOTIFY_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function setAgentNotifyEnabled(enabled) {
+  try {
+    localStorage.setItem(AGENT_NOTIFY_KEY, enabled ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
+
+function agentDisplayName(agentId) {
+  return window.AgentStatus?.AGENT_LABELS?.[agentId] || agentId || "Agent";
+}
+
+function renderAgentBadge(session, status) {
+  const badge = session.element.querySelector(".agent-badge");
+  if (!badge) return;
+  if (status.state === "none") {
+    badge.hidden = true;
+    badge.removeAttribute("data-state");
+    return;
+  }
+  const name = agentDisplayName(status.agentId);
+  let label = status.label;
+  if (status.state === "exited" && status.exitCode != null) label = `已退出（代码 ${status.exitCode}）`;
+  const title = session.element.querySelector(".pane-title")?.textContent || "";
+  const text = title.includes(name) ? label : `${name} · ${label}`;
+  badge.dataset.state = status.state;
+  badge.querySelector(".agent-badge-text").textContent = text;
+  badge.title = `${name}：${label}`;
+  badge.hidden = false;
+}
+
+function maybeNotifyAgent(session, status, previous) {
+  if (status.state !== "waiting" && status.state !== "approval") return;
+  // 只在刚从「运行中」停下来，或从等待升级为需要确认时提醒
+  if (previous !== "running" && !(previous === "waiting" && status.state === "approval")) return;
+  const unattended = !document.hasFocus() || activeId !== session.id;
+  if (!unattended) return;
+  const now = Date.now();
+  if (now - session.agentNotifiedAt < AGENT_NOTIFY_COOLDOWN_MS) return;
+  session.agentNotifiedAt = now;
+  const name = agentDisplayName(status.agentId);
+  const pane = session.element.querySelector(".pane-index")?.textContent || "";
+  const headline = status.state === "approval" ? `${name} 需要确认` : `${name} 等待输入`;
+  syncPetStatus({ alert: headline });
+  if (!isAgentNotifyEnabled() || typeof window.terminalDeck.notifyAgent !== "function") return;
+  window.terminalDeck.notifyAgent({
+    sessionId: session.id,
+    title: headline,
+    body: `终端 ${pane} · ${status.state === "approval" ? "Agent 正在请求你的确认" : "Agent 已停下来等待你的输入"}`,
+  });
+}
+
+function refreshAgentStatuses() {
+  const states = [];
+  for (const session of sessions.values()) {
+    if (!session.agentTracker) continue;
+    const status = session.agentTracker.evaluate();
+    states.push(status.state);
+    if (status.state === session.agentState) continue;
+    const previous = session.agentState;
+    session.agentState = status.state;
+    renderAgentBadge(session, status);
+    updateTab(session);
+    maybeNotifyAgent(session, status, previous);
+  }
+  const summary = window.AgentStatus
+    ? window.AgentStatus.summarizeStates(states)
+    : { counts: agentSummaryCounts, text: "" };
+  const wasRunning = agentSummaryCounts.running > 0;
+  agentSummaryCounts = summary.counts;
+  if (agentSummaryChip) {
+    agentSummaryChip.textContent = summary.text;
+    agentSummaryChip.title = summary.text;
+    agentSummaryChip.hidden = !summary.text;
+    agentSummaryChip.classList.toggle("has-attention", summary.counts.approval > 0);
+  }
+  if (wasRunning !== agentSummaryCounts.running > 0) syncPetStatus();
+  updateStatusBar();
+}
+
+window.setInterval(refreshAgentStatuses, AGENT_STATUS_TICK_MS);
+
+if (typeof window.terminalDeck.onAgentFocusSession === "function") {
+  window.terminalDeck.onAgentFocusSession((id) => {
+    if (sessions.has(String(id))) setActive(String(id));
+  });
+}
+
+/** Git 分支切换：仅本地 checkout，不拉取/推送 */
+let gitBranchState = { isRepo: false, current: "", branches: [], detached: false };
+let gitBranchBusy = false;
+let gitErrorTimer = 0;
+let gitBranchRefreshRun = 0;
+
+function clearGitBranchError() {
+  if (gitErrorTimer) {
+    clearTimeout(gitErrorTimer);
+    gitErrorTimer = 0;
+  }
+  if (gitBranchControl) gitBranchControl.classList.remove("is-error");
+}
+
+function flashGitBranchError(message) {
+  if (!gitBranchControl || !gitBranchSelect) return;
+  clearGitBranchError();
+  const text = String(message || "切换分支失败").trim() || "切换分支失败";
+  gitBranchControl.classList.add("is-error");
+  gitBranchControl.title = text;
+  gitBranchSelect.title = text;
+  gitErrorTimer = window.setTimeout(() => {
+    gitErrorTimer = 0;
+    gitBranchControl.classList.remove("is-error");
+    const tip = "切换本地 Git 分支（仅切换，不拉取/推送）";
+    gitBranchControl.title = tip;
+    gitBranchSelect.title = tip;
+  }, 5000);
+}
+
+function hideGitBranchControl() {
+  gitBranchState = { isRepo: false, current: "", branches: [], detached: false };
+  if (!gitBranchControl || !gitBranchSelect) return;
+  clearGitBranchError();
+  gitBranchControl.hidden = true;
+  gitBranchSelect.disabled = true;
+  gitBranchSelect.innerHTML = '<option value="">非 Git 仓库</option>';
+}
+
+function renderGitBranchSelect(info) {
+  if (!gitBranchControl || !gitBranchSelect) return;
+
+  if (!info || !info.isRepo) {
+    hideGitBranchControl();
+    return;
+  }
+
+  const branches = Array.isArray(info.branches) ? info.branches.slice() : [];
+  const current = String(info.current || "");
+  const detached = Boolean(info.detached);
+
+  gitBranchState = {
+    isRepo: true,
+    current,
+    branches,
+    detached,
+  };
+
+  clearGitBranchError();
+  gitBranchControl.hidden = false;
+  gitBranchSelect.disabled = gitBranchBusy || branches.length === 0;
+
+  const previous = gitBranchSelect.value;
+  gitBranchSelect.innerHTML = "";
+
+  if (detached) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = current || "detached HEAD";
+    opt.disabled = true;
+    opt.selected = true;
+    gitBranchSelect.appendChild(opt);
+  }
+
+  for (const name of branches) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    if (!detached && name === current) opt.selected = true;
+    gitBranchSelect.appendChild(opt);
+  }
+
+  if (!detached && current && branches.includes(current)) {
+    gitBranchSelect.value = current;
+  } else if (!detached && previous && branches.includes(previous)) {
+    gitBranchSelect.value = previous;
+  }
+
+  const tip = detached
+    ? `当前处于分离 HEAD（${current}），可切换到本地分支`
+    : `当前分支：${current || "未知"}（仅本地切换，不拉取/推送）`;
+  gitBranchControl.title = tip;
+  gitBranchSelect.title = tip;
+}
+
+async function refreshGitBranchInfo(workspace = defaultWorkspace) {
+  const refreshRun = ++gitBranchRefreshRun;
+  if (!window.terminalDeck || typeof window.terminalDeck.getGitBranchInfo !== "function") {
+    if (workspace === defaultWorkspace) hideGitBranchControl();
+    return;
+  }
+  try {
+    const info = await window.terminalDeck.getGitBranchInfo(workspace);
+    // A probe for the previous workspace may finish after a new directory was
+    // imported. Never let that stale result overwrite the current sidebar.
+    if (refreshRun !== gitBranchRefreshRun || workspace !== defaultWorkspace) return;
+    renderGitBranchSelect(info);
+  } catch {
+    if (refreshRun !== gitBranchRefreshRun || workspace !== defaultWorkspace) return;
+    hideGitBranchControl();
+  }
+}
+
+async function onGitBranchChange() {
+  if (!gitBranchSelect || gitBranchBusy) return;
+  const next = gitBranchSelect.value;
+  if (!next) return;
+  if (!gitBranchState.detached && next === gitBranchState.current) return;
+
+  const workspace = defaultWorkspace;
+  // Invalidate a focus-triggered probe that may still contain the state from
+  // before this checkout.
+  gitBranchRefreshRun += 1;
+  gitBranchBusy = true;
+  gitBranchSelect.disabled = true;
+  clearGitBranchError();
+
+  const previousState = { ...gitBranchState, branches: gitBranchState.branches.slice() };
+
+  try {
+    const result = await window.terminalDeck.checkoutGitBranch(workspace, next);
+    // The user may import another workspace while Git is working.
+    if (workspace !== defaultWorkspace) return;
+    if (result && result.ok) {
+      renderGitBranchSelect({
+        isRepo: true,
+        current: result.current,
+        branches: result.branches || previousState.branches,
+        detached: Boolean(result.detached),
+      });
+      return;
+    }
+
+    flashGitBranchError(result && result.error);
+    if (result && Array.isArray(result.branches) && result.branches.length) {
+      renderGitBranchSelect({
+        isRepo: true,
+        current: result.current || previousState.current,
+        branches: result.branches,
+        detached: Boolean(result.detached),
+      });
+    } else {
+      renderGitBranchSelect(previousState);
+    }
+  } catch (error) {
+    if (workspace !== defaultWorkspace) return;
+    flashGitBranchError(error && error.message);
+    renderGitBranchSelect(previousState);
+  } finally {
+    gitBranchBusy = false;
+    if (gitBranchSelect) {
+      gitBranchSelect.disabled = !gitBranchState.isRepo || gitBranchState.branches.length === 0;
+    }
+  }
+}
+
+workspaceButton.addEventListener("click", async () => {
+  const selection = await window.terminalDeck.chooseWorkspace();
+  if (!selection) return;
+
+  // Newer main processes return the Git snapshot atomically; accepting the
+  // legacy string keeps the renderer usable during development reloads.
+  const selected = typeof selection === "string" ? selection : selection.path;
+  if (!selected) return;
+
+  defaultWorkspace = selected;
+  updateWorkspacePresentation(selected);
+  try {
+    localStorage.setItem("terminal-deck-workspace", selected);
+  } catch {
+    // ignore
+  }
+  gitBranchRefreshRun += 1;
+
+  if (typeof selection === "object" && selection.git) {
+    renderGitBranchSelect(selection.git);
+  } else {
+    refreshGitBranchInfo(selected);
+  }
+});
+
+if (gitBranchSelect) {
+  gitBranchSelect.addEventListener("change", () => {
+    onGitBranchChange();
+  });
+  // 展开时刷新一次，便于外部终端改分支后同步
+  gitBranchSelect.addEventListener("focus", () => {
+    if (!gitBranchBusy) refreshGitBranchInfo();
+  });
+}
+
+// 启动时探测默认工作区是否为 Git 仓库
+refreshGitBranchInfo();
+
+layoutSelect.addEventListener("change", () => {
+  grid.className = `terminal-grid layout-${layoutSelect.value}`;
+  grid.classList.toggle("view-tabs", viewMode === "tabs");
+  // 切换布局模式：强制均分轨道
+  relayoutGrid({ resetTracks: true });
+});
+
+syncGlassControlUi();
+applyCurrentSkin();
+
+/** 扫描 skins 目录，未在 catalog 登记的图片自动上架商城 */
+async function loadSkinImagesFromDisk() {
+  if (!window.terminalDeck || typeof window.terminalDeck.listSkinImages !== "function") return;
+  if (typeof registerSkinImagesFromDisk !== "function") return;
+  try {
+    const files = await window.terminalDeck.listSkinImages();
+    const added = registerSkinImagesFromDisk(files || []);
+    if (added > 0 && window.skinShop && typeof window.skinShop.refresh === "function") {
+      window.skinShop.refresh();
+    }
+  } catch {
+    // ignore scan failures
+  }
+}
+loadSkinImagesFromDisk();
+
+if (skinShopButton) {
+  skinShopButton.addEventListener("click", () => {
+    hideSettingsMenu();
+    if (window.skinShop) window.skinShop.toggle();
+  });
+}
+
+if (glassSlider) {
+  glassSlider.addEventListener("input", () => {
+    setGlassLevel(glassSlider.value);
+  });
+}
+
+if (customSkinButton) {
+  customSkinButton.addEventListener("click", () => {
+    window.__uploadSkinFromShop();
+  });
+}
+
+window.addEventListener("resize", () => {
+  hideMcpAgentMenu();
+  if (isResizingPane) return;
+  // 窗口尺寸变化：保持当前行列与轨道比例，只重新 fit
+  requestAnimationFrame(() => scheduleFitAllSessions());
+});
+
+// --- SSH 对话框事件 ---
+if (sshDialog) {
+  sshDialog.addEventListener("click", (event) => {
+    if (event.target && event.target.closest && event.target.closest("[data-ssh-close]")) {
+      event.preventDefault();
+      closeSshDialog(null);
+    }
+  });
+}
+
+if (sshAuthMethod) {
+  sshAuthMethod.addEventListener("change", () => {
+    syncSshAuthMethodUi();
+    setSshFormError("");
+  });
+}
+
+if (sshAgentEnabled) {
+  sshAgentEnabled.addEventListener("change", () => {
+    setSshFormError("");
+    syncSshAgentLaunchUi();
+  });
+}
+
+if (sshAgentRefresh) {
+  sshAgentRefresh.addEventListener("click", () => {
+    refreshSshAgentDetection();
+  });
+}
+
+if (sshAgentOptions) {
+  sshAgentOptions.addEventListener("change", (event) => {
+    if (!event.target.matches('input[name="launchAgent"]')) return;
+    syncSshAgentLaunchUi({ detect: false });
+    setSshFormError("");
+  });
+}
+
+if (sshForm) {
+  sshForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const values = readSshFormValues();
+    if (!values.host) {
+      setSshFormError("请填写主机地址");
+      if (sshHost) sshHost.focus();
+      return;
+    }
+    if (!values.user) {
+      setSshFormError("请填写用户名（Agent MCP 桥接与远端根目录需要用户名）");
+      if (sshUser) sshUser.focus();
+      return;
+    }
+    if (values.authMethod === "key" && !values.identityFile) {
+      setSshFormError("请加载登录私钥文件");
+      if (sshIdentityPick) sshIdentityPick.focus();
+      return;
+    }
+    if (sshAgentEnabled?.checked && !values.launchAgent) {
+      setSshFormError("请先选择一个已检测到的 Agent");
+      if (sshAgentRefresh) sshAgentRefresh.focus();
+      return;
+    }
+    if (values.launchAgent && values.authMethod === "ask") {
+      setSshFormError("自动启动 Agent 需要预填密码或私钥，不能使用“每次询问”");
+      if (sshAuthMethod) sshAuthMethod.focus();
+      return;
+    }
+    if (values.launchAgent && values.authMethod === "password" && !values.password) {
+      setSshFormError("自动启动 Agent 时请填写 SSH 登录密码");
+      if (sshPassword) sshPassword.focus();
+      return;
+    }
+    setSshFormError("");
+    closeSshDialog(values);
+  });
+}
+
+if (sshIdentityPick) {
+  sshIdentityPick.addEventListener("click", async () => {
+    try {
+      const file = await window.terminalDeck.chooseSshIdentity();
+      if (file) setSshIdentityPath(file);
+    } catch {
+      // ignore
+    }
+  });
+}
+
+if (sshIdentityClear) {
+  sshIdentityClear.addEventListener("click", () => {
+    setSshIdentityPath("");
+  });
+}
+
+// 拖放私钥到秘钥区域
+if (sshIdentityDrop) {
+  let dropDepth = 0;
+  sshIdentityDrop.addEventListener("dragenter", (event) => {
+    event.preventDefault();
+    dropDepth += 1;
+    sshIdentityDrop.classList.add("is-drop-target");
+  });
+  sshIdentityDrop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+  });
+  sshIdentityDrop.addEventListener("dragleave", (event) => {
+    event.preventDefault();
+    dropDepth = Math.max(0, dropDepth - 1);
+    if (dropDepth === 0) sshIdentityDrop.classList.remove("is-drop-target");
+  });
+  sshIdentityDrop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropDepth = 0;
+    sshIdentityDrop.classList.remove("is-drop-target");
+    const file = event.dataTransfer?.files?.[0];
+    if (!file) return;
+    try {
+      const filePath = window.terminalDeck.getPathForFile(file);
+      if (filePath) {
+        setSshIdentityPath(filePath);
+        if (sshAuthMethod && sshAuthMethod.value !== "key") {
+          sshAuthMethod.value = "key";
+          syncSshAuthMethodUi();
+        }
+        setSshFormError("");
+      }
+    } catch {
+      setSshFormError("无法读取拖入的私钥路径");
+    }
+  });
+}
+
+function hideMcpAgentMenu() {
+  if (!mcpAgentMenu || mcpAgentMenu.hidden) return;
+  mcpAgentMenu.hidden = true;
+  if (mcpSetupButton) {
+    mcpSetupButton.classList.remove("active");
+    mcpSetupButton.setAttribute("aria-expanded", "false");
+  }
+}
+
+function positionMcpAgentMenu() {
+  if (!mcpAgentMenu || !mcpSetupButton) return;
+  const anchor = mcpSetupButton.getBoundingClientRect();
+  const width = 286;
+  // 按钮在设置面板里：菜单贴在面板左侧展开
+  if (settingsMenu && !settingsMenu.hidden) {
+    const panel = settingsMenu.getBoundingClientRect();
+    const menuWidth = mcpAgentMenu.offsetWidth || width;
+    const left = Math.max(8, panel.left - menuWidth - 6);
+    const top = Math.max(8, Math.min(window.innerHeight - 220, anchor.top - 8));
+    mcpAgentMenu.style.left = `${Math.round(left)}px`;
+    mcpAgentMenu.style.top = `${Math.round(top)}px`;
+    return;
+  }
+  const left = Math.max(8, Math.min(window.innerWidth - width - 8, anchor.right - width));
+  const estimatedHeight = 205;
+  const placeAbove = anchor.bottom + estimatedHeight + 8 > window.innerHeight;
+  const top = placeAbove
+    ? Math.max(8, anchor.top - estimatedHeight - 6)
+    : anchor.bottom + 6;
+  mcpAgentMenu.style.left = `${Math.round(left)}px`;
+  mcpAgentMenu.style.top = `${Math.round(top)}px`;
+}
+
+function setMcpAgentStatus(agentId, text, state = "") {
+  if (!mcpAgentMenu) return;
+  const status = mcpAgentMenu.querySelector(
+    `button[data-mcp-agent="${agentId}"] .agent-mcp-status`
+  );
+  if (!status) return;
+  status.textContent = text;
+  status.classList.toggle("is-missing", state === "missing");
+  status.classList.toggle("is-success", state === "success");
+}
+
+async function refreshMcpAgentStatus() {
+  if (!mcpAgentMenu) return;
+  for (const button of mcpAgentMenu.querySelectorAll("button[data-mcp-agent]")) {
+    setMcpAgentStatus(button.dataset.mcpAgent, "检测中…");
+  }
+  try {
+    const statuses = await window.terminalDeck.getMcpAgentStatus();
+    for (const status of statuses || []) {
+      setMcpAgentStatus(status.id, status.available ? "可一键启用" : "未检测到", status.available ? "" : "missing");
+    }
+  } catch {
+    for (const button of mcpAgentMenu.querySelectorAll("button[data-mcp-agent]")) {
+      setMcpAgentStatus(button.dataset.mcpAgent, "检测失败", "missing");
+    }
+  }
+}
+
+if (mcpSetupButton && mcpAgentMenu) {
+  mcpSetupButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (!mcpAgentMenu.hidden) {
+      hideMcpAgentMenu();
+      return;
+    }
+    hideContextMenu();
+    mcpAgentMenu.hidden = false;
+    mcpSetupButton.classList.add("active");
+    mcpSetupButton.setAttribute("aria-expanded", "true");
+    positionMcpAgentMenu();
+    refreshMcpAgentStatus();
+  });
+
+  mcpAgentMenu.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-mcp-agent]");
+    if (!button || button.disabled) return;
+    const agent = button.dataset.mcpAgent;
+    const label = button.querySelector("strong")?.textContent || agent;
+    button.disabled = true;
+    setMcpAgentStatus(agent, "正在启用…");
+    try {
+      const result = await window.terminalDeck.installMcpForAgent(agent);
+      if (!result?.ok) throw new Error(result?.error || "MCP 启用失败");
+      setMcpAgentStatus(agent, "已启用", "success");
+      window.alert(
+        `${label} 已启用终端矩阵远端工具。\n\n新启动的 Agent 会自动生效；如果 ${label} 已经在运行，请刷新 MCP 或重新启动该会话。`
+      );
+      hideMcpAgentMenu();
+    } catch (error) {
+      const message = error?.message || String(error);
+      setMcpAgentStatus(agent, /未检测到/.test(message) ? "未检测到" : "启用失败", "missing");
+      window.alert(`${label} 启用失败：\n${message}`);
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
+if (remoteAgentSelect) {
+  remoteAgentSelect.addEventListener("change", () => {
+    window.terminalDeck.setMcpRemoteSession(remoteAgentSelect.value).catch(() => {});
+  });
+}
+
+const STUDIO_AGENT_DEFINITIONS = Object.freeze({
+  codex: { id: "codex", label: "Codex" },
+  claude: { id: "claude", label: "Claude" },
+  grok: { id: "grok", label: "Grok" },
+});
+
+let selectedStudioAgentId = "codex";
+const studioAgentAvailability = new Map();
+let studioAgentMenu = null;
+
+function setStudioView(nextView) {
+  const view = nextView === "terminal" ? "terminal" : "agent";
+  document.body.dataset.studioView = view;
+  if (agentWorkspace) agentWorkspace.hidden = view !== "agent";
+  if (terminalWorkspace) terminalWorkspace.hidden = view !== "terminal";
+
+  for (const button of document.querySelectorAll("[data-studio-view-target]")) {
+    const isActive = button.dataset.studioViewTarget === view;
+    button.classList.toggle("is-active", isActive);
+    if (button.getAttribute("role") === "tab") {
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+    }
+  }
+
+  if (view === "terminal") {
+    requestAnimationFrame(() => {
+      relayoutGrid();
+      requestAnimationFrame(() => scheduleFitAllSessions({ force: true }));
+    });
+  } else {
+    requestAnimationFrame(() => agentPrompt?.focus());
+  }
+}
+
+function selectStudioAgent(agentId) {
+  if (!STUDIO_AGENT_DEFINITIONS[agentId]) return;
+  selectedStudioAgentId = agentId;
+  const selected = STUDIO_AGENT_DEFINITIONS[agentId];
+  if (composerAgentLabel) composerAgentLabel.textContent = selected.label;
+
+  for (const button of document.querySelectorAll(".studio-agent-choice[data-agent-id]")) {
+    const isActive = button.dataset.agentId === agentId;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  }
+
+  if (studioAgentMenu) {
+    for (const button of studioAgentMenu.querySelectorAll("button[data-agent-id]")) {
+      button.classList.toggle("is-active", button.dataset.agentId === agentId);
+    }
+  }
+}
+
+async function refreshStudioAgentStatus() {
+  try {
+    const statuses = await window.terminalDeck.getMcpAgentStatus();
+    for (const status of statuses || []) {
+      studioAgentAvailability.set(status.id, Boolean(status.available));
+    }
+  } catch {
+    // 保留未知状态；发送时仍允许在终端中尝试启动。
+  }
+
+  for (const button of document.querySelectorAll(".studio-agent-choice[data-agent-id]")) {
+    const availability = studioAgentAvailability.get(button.dataset.agentId);
+    button.classList.toggle("is-available", availability === true);
+    button.classList.toggle("is-missing", availability === false);
+    button.title =
+      availability === true
+        ? `${STUDIO_AGENT_DEFINITIONS[button.dataset.agentId].label} 已就绪`
+        : availability === false
+        ? `未检测到 ${STUDIO_AGENT_DEFINITIONS[button.dataset.agentId].label}`
+        : "正在检测 Agent";
+  }
+}
+
+function ensureStudioAgentMenu() {
+  if (studioAgentMenu) return studioAgentMenu;
+  studioAgentMenu = document.createElement("div");
+  studioAgentMenu.className = "studio-agent-menu";
+  studioAgentMenu.hidden = true;
+  studioAgentMenu.setAttribute("role", "menu");
+  studioAgentMenu.innerHTML = Object.values(STUDIO_AGENT_DEFINITIONS)
+    .map(
+      (agent) => `
+        <button type="button" role="menuitem" data-agent-id="${agent.id}">
+          <span class="studio-agent-dot" aria-hidden="true"></span>
+          <span>${agent.label}</span>
+        </button>
+      `
+    )
+    .join("");
+  document.body.appendChild(studioAgentMenu);
+  studioAgentMenu.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-agent-id]");
+    if (!button) return;
+    selectStudioAgent(button.dataset.agentId);
+    studioAgentMenu.hidden = true;
+    agentPrompt?.focus();
+  });
+  return studioAgentMenu;
+}
+
+function positionStudioAgentMenu() {
+  if (!composerAgentButton) return;
+  const menu = ensureStudioAgentMenu();
+  const anchor = composerAgentButton.getBoundingClientRect();
+  menu.style.left = `${Math.round(Math.max(8, anchor.right - 174))}px`;
+  menu.style.top = `${Math.round(Math.max(8, anchor.top - 138))}px`;
+}
+
+function quotePowerShellLiteral(value) {
+  return `'${String(value || "").replace(/'/g, "''")}'`;
+}
+
+function buildStudioAgentCommand(agentId, userPrompt) {
+  const prompt = quotePowerShellLiteral(userPrompt);
+  if (agentId === "claude") {
+    return `claude --print --output-format text --permission-mode acceptEdits ${prompt}`;
+  }
+  if (agentId === "grok") {
+    return `grok --single ${prompt} --output-format plain --permission-mode acceptEdits`;
+  }
+  return `codex exec --skip-git-repo-check --color never --full-auto ${prompt}`;
+}
+
+function getStudioConversationInner() {
+  if (!agentConversation) return null;
+  let inner = agentConversation.querySelector(".studio-conversation-inner");
+  if (!inner) {
+    inner = document.createElement("div");
+    inner.className = "studio-conversation-inner";
+    agentConversation.appendChild(inner);
+  }
+  return inner;
+}
+
+function appendStudioUserMessage(message) {
+  const inner = getStudioConversationInner();
+  if (!inner) return;
+  inner.querySelector(".studio-empty-conversation")?.remove();
+
+  const article = document.createElement("article");
+  article.className = "studio-user-message";
+  const paragraph = document.createElement("p");
+  paragraph.textContent = message;
+  const meta = document.createElement("span");
+  const time = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  meta.innerHTML = `<i class="ti ti-check" aria-hidden="true"></i> 已发送 · ${time}`;
+  article.append(paragraph, meta);
+  inner.appendChild(article);
+}
+
+function appendStudioLiveResponse(agent) {
+  const inner = getStudioConversationInner();
+  if (!inner) return null;
+
+  const block = document.createElement("section");
+  block.className = "studio-response-block is-live";
+  block.innerHTML = `
+    <button class="studio-duration" type="button" aria-expanded="true">
+      <i class="ti ti-loader-2" aria-hidden="true"></i>
+      <span>${agent.label} 正在启动</span>
+      <i class="ti ti-chevron-right" aria-hidden="true"></i>
+    </button>
+    <div class="studio-live-response">
+      <pre class="studio-live-response-output">正在连接 ${agent.label}…</pre>
+      <button class="studio-live-response-hint" type="button" data-studio-view-target="terminal">
+        <i class="ti ti-terminal-2" aria-hidden="true"></i>
+        权限确认和完整日志可在终端矩阵中查看
+      </button>
+    </div>
+  `;
+  inner.appendChild(block);
+  block.querySelector("[data-studio-view-target]")?.addEventListener("click", () => setStudioView("terminal"));
+  return {
+    blockEl: block,
+    statusEl: block.querySelector(".studio-duration span"),
+    outputEl: block.querySelector(".studio-live-response-output"),
+  };
+}
+
+async function submitStudioAgentPrompt(message) {
+  const text = String(message || "").trim();
+  if (!text) return;
+  const agent = STUDIO_AGENT_DEFINITIONS[selectedStudioAgentId];
+  if (!agent) return;
+
+  appendStudioUserMessage(text);
+  const response = appendStudioLiveResponse(agent);
+  if (!response) return;
+  if (agentConversation) agentConversation.scrollTop = agentConversation.scrollHeight;
+
+  const availability = studioAgentAvailability.get(agent.id);
+  if (availability === false) {
+    response.blockEl.classList.remove("is-live");
+    response.statusEl.textContent = `未检测到 ${agent.label}`;
+    response.outputEl.textContent = `请先点击右上角“加载 Agent”，完成 ${agent.label} 的本机安装或配置后再试。`;
+    return;
+  }
+
+  const command = buildStudioAgentCommand(agent.id, text);
+  const context = {
+    id: agent.id,
+    label: agent.label,
+    prompt: text,
+    command,
+    raw: "",
+    startedAt: Date.now(),
+    blockEl: response.blockEl,
+    statusEl: response.statusEl,
+    outputEl: response.outputEl,
+  };
+
+  if (agentSendButton) agentSendButton.disabled = true;
+  try {
+    const session = await createSession({
+      shell: "powershell",
+      agentChat: context,
+      startCommand: command,
+    });
+    if (!session) throw new Error("Agent 终端创建失败");
+    response.statusEl.textContent = `${agent.label} 正在处理`;
+    response.outputEl.textContent = `已在终端矩阵中启动 ${agent.label}，正在等待响应…`;
+  } catch (error) {
+    response.blockEl.classList.remove("is-live");
+    response.statusEl.textContent = "启动失败";
+    response.outputEl.textContent = error?.message || String(error);
+  } finally {
+    if (agentSendButton) agentSendButton.disabled = false;
+    agentPrompt?.focus();
+  }
+}
+
+for (const button of document.querySelectorAll("[data-studio-view-target]")) {
+  button.addEventListener("click", () => setStudioView(button.dataset.studioViewTarget));
+}
+
+for (const button of document.querySelectorAll(".studio-agent-choice[data-agent-id]")) {
+  button.addEventListener("click", () => selectStudioAgent(button.dataset.agentId));
+}
+
+for (const button of document.querySelectorAll("[data-workspace-trigger]")) {
+  button.addEventListener("click", () => workspaceButton?.click());
+}
+
+if (composerAgentButton) {
+  composerAgentButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const menu = ensureStudioAgentMenu();
+    if (!menu.hidden) {
+      menu.hidden = true;
+      return;
+    }
+    positionStudioAgentMenu();
+    menu.hidden = false;
+  });
+}
+
+if (agentTerminalJump) {
+  agentTerminalJump.addEventListener("click", () => setStudioView("terminal"));
+}
+
+if (agentComposer) {
+  agentComposer.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const message = agentPrompt?.value || "";
+    if (agentPrompt) {
+      agentPrompt.value = "";
+      agentPrompt.style.height = "";
+    }
+    submitStudioAgentPrompt(message);
+  });
+}
+
+if (agentPrompt) {
+  agentPrompt.addEventListener("input", () => {
+    agentPrompt.style.height = "auto";
+    agentPrompt.style.height = `${Math.min(132, agentPrompt.scrollHeight)}px`;
+  });
+  agentPrompt.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      agentComposer?.requestSubmit();
+    }
+  });
+}
+
+if (newTaskButton) {
+  newTaskButton.addEventListener("click", () => {
+    setStudioView("agent");
+    const inner = getStudioConversationInner();
+    if (inner) {
+      inner.innerHTML = `
+        <div class="studio-empty-conversation">
+          <i class="ti ti-sparkles" aria-hidden="true"></i>
+          <h2>开始一个新任务</h2>
+          <p>选择 Codex、Claude 或 Grok，然后描述你想完成的工作。</p>
+        </div>
+      `;
+    }
+    agentPrompt?.focus();
+  });
+}
+
+if (refreshEnvironmentButton) {
+  refreshEnvironmentButton.addEventListener("click", () => {
+    refreshGitBranchInfo();
+    refreshStudioAgentStatus();
+  });
+}
+
+window.addEventListener("mousedown", (event) => {
+  if (
+    studioAgentMenu &&
+    !studioAgentMenu.hidden &&
+    !studioAgentMenu.contains(event.target) &&
+    !composerAgentButton?.contains(event.target)
+  ) {
+    studioAgentMenu.hidden = true;
+  }
+});
+
+newTerminalButton.addEventListener("click", () => createSession());
+emptyNewButton.addEventListener("click", () => createSession());
+if (sshConnectButtonSidebar) {
+  sshConnectButtonSidebar.addEventListener("click", () => connectSshSession());
+}
+if (emptySshButton) {
+  emptySshButton.addEventListener("click", () => connectSshSession());
+}
+
+petToggleButton.addEventListener("click", async () => {
+  const next = !petEnabled;
+  const enabled = await window.terminalDeck.setPetEnabled(next);
+  setPetToggleUi(enabled);
+  if (enabled) syncPetStatus({ mood: "happy" });
+});
+
+window.terminalDeck.onPetState((payload) => {
+  setPetToggleUi(payload && payload.enabled);
+});
+
+window.terminalDeck.onPetRequestNewTerminal(() => {
+  createSession();
+});
+
+window.terminalDeck.getPetState().then((state) => {
+  if (state) setPetToggleUi(state.enabled);
+}).catch(() => {});
+
+window.addEventListener("keydown", (event) => {
+  if (event.code === "Escape") {
+    if (sshDialog && !sshDialog.hidden) {
+      event.preventDefault();
+      closeSshDialog(null);
+      return;
+    }
+    if (!contextMenu.hidden) {
+      hideContextMenu();
+      return;
+    }
+    if (mcpAgentMenu && !mcpAgentMenu.hidden) {
+      hideMcpAgentMenu();
+      return;
+    }
+    if (settingsMenu && !settingsMenu.hidden) {
+      hideSettingsMenu();
+      return;
+    }
+    if (typeof isLaunchpadOpen === "function" && isLaunchpadOpen()) {
+      event.preventDefault();
+      closeLaunchpad();
+      return;
+    }
+  }
+  // Ctrl+Shift+L 打开 Agent 启动台（Ctrl+Shift+A 已用于终端全选）
+  if (event.ctrlKey && event.shiftKey && event.code === "KeyL" && typeof toggleLaunchpad === "function") {
+    event.preventDefault();
+    toggleLaunchpad();
+    return;
+  }
+  if (event.ctrlKey && event.shiftKey && event.code === "KeyT") {
+    event.preventDefault();
+    createSession();
+    return;
+  }
+  if (event.ctrlKey && event.shiftKey && event.code === "KeyW" && activeId) {
+    event.preventDefault();
+    requestCloseSession(activeId);
+    return;
+  }
+  // Ctrl+Tab / Ctrl+Shift+Tab 切换标签
+  if (event.ctrlKey && !event.altKey && event.code === "Tab") {
+    if (sessions.size > 1) {
+      event.preventDefault();
+      cycleTab(event.shiftKey ? -1 : 1);
+    }
+    return;
+  }
+  // Ctrl+1..9 跳到对应标签（不存在的序号透传给终端）
+  if (event.ctrlKey && !event.shiftKey && !event.altKey && /^Digit[1-9]$/.test(event.code)) {
+    const id = tabIdForDigit(Number(event.code.slice(-1)));
+    if (id) {
+      event.preventDefault();
+      setActive(id);
+    }
+    return;
+  }
+  if (event.altKey && /^Digit[1-9]$/.test(event.code)) {
+    const index = Number(event.code.slice(-1)) - 1;
+    const id = [...sessions.keys()][index];
+    if (id) {
+      event.preventDefault();
+      setActive(id);
+    }
+  }
+});
+
+contextMenu.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action]");
+  if (!button || !contextTargetId) return;
+  const session = sessions.get(contextTargetId);
+  if (button.dataset.action === "copy") copySelection(session);
+  if (button.dataset.action === "paste") pasteClipboard(session);
+  if (button.dataset.action === "select-all" && session) session.terminal.selectAll();
+  hideContextMenu();
+  if (session) session.terminal.focus();
+});
+
+window.addEventListener("mousedown", (event) => {
+  if (!contextMenu.hidden && !contextMenu.contains(event.target)) hideContextMenu();
+  if (
+    mcpAgentMenu &&
+    !mcpAgentMenu.hidden &&
+    !mcpAgentMenu.contains(event.target) &&
+    !mcpSetupButton?.contains(event.target)
+  ) hideMcpAgentMenu();
+  if (
+    settingsMenu &&
+    !settingsMenu.hidden &&
+    !settingsMenu.contains(event.target) &&
+    !settingsButton?.contains(event.target) &&
+    !mcpAgentMenu?.contains(event.target)
+  ) hideSettingsMenu();
+});
+window.addEventListener("blur", () => {
+  hideContextMenu();
+  hideMcpAgentMenu();
+  hideSettingsMenu();
+});
+
+window.addEventListener("dragover", (event) => event.preventDefault());
+window.addEventListener("drop", (event) => event.preventDefault());
+
+updateWorkspacePresentation(defaultWorkspace);
+setStudioView("terminal");
+updateSessionCount();
+renderSshHostList();
+updateStatusBar();
+// 启动时显示欢迎页（快速启动 Agent / 普通终端 / SSH），不再自动开 PowerShell
+window.terminalDeck.onHostLaunch(async ({ requestId, options }) => {
+  try {
+    const session = await createSession(options);
+    if (!session) throw new Error("未能创建接续终端");
+    window.terminalDeck.hostLaunchResult({ requestId, id: session.id });
+  } catch (error) {
+    window.terminalDeck.hostLaunchResult({ requestId, error: error.message || String(error) });
+  }
+});
+window.terminalDeck.hostReady();

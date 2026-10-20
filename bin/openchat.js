@@ -8,20 +8,20 @@ import { NATIVE } from '../src/native/index.js';
 import { listSessions } from '../src/core.js';
 import { HOME, exists, samePath, oneLine, quoteArg } from '../src/util.js';
 
-const HELP = `openchat — 在不同编程 agent 之间无缝切换会话
+const HELP = `sharechat — 在不同编程 agent 之间无缝切换会话
 
 一键切换（在项目目录里运行）:
-  openchat switch codex          把当前目录最近的会话（来自任意其他 agent）转成 Codex 会话并打开
-  openchat switch claude --from codex
-  openchat switch qwen -s 3      指定要转的会话
+  sharechat switch codex          把当前目录最近的会话（来自任意其他 agent）转成 Codex 会话并打开
+  sharechat switch claude --from codex
+  sharechat switch qwen -s 3      指定要转的会话
 
 用法:
-  openchat switch <agent> [--from <agent>] [-s <会话>]       一键切换到另一个 agent
-  openchat handoff <会话> --to <agent> [选项]                 转换指定会话并打开
-  openchat list [-a claude,codex] [--here] [-n 20] [--json]   列出会话（带编号）
-  openchat show <会话>                                        打印会话内容（Markdown）
-  openchat export <会话> [-o 文件] [--format md|json]          导出为 Markdown 或统一 JSON
-  openchat agents                                            查看支持的 agent
+  sharechat switch <agent> [--from <agent>] [-s <会话>]       一键切换到另一个 agent
+  sharechat handoff <会话> --to <agent> [选项]                 转换指定会话并打开
+  sharechat list [-a claude,codex] [--here] [-n 20] [--json]   列出会话（带编号）
+  sharechat show <会话>                                        打印会话内容（Markdown）
+  sharechat export <会话> [-o 文件] [--format md|json]          导出为 Markdown 或统一 JSON
+  sharechat agents                                            查看支持的 agent
 
 原生切换（写入目标 agent 自己的会话格式，用 --resume 打开，历史就是真实的对话）:
   ${Object.keys(NATIVE).join(', ')}
@@ -70,11 +70,11 @@ function collect(opts) {
 }
 
 function resolve(ref, opts) {
-  if (!ref) throw new Error('缺少 <会话> 参数，先运行 openchat list 看看');
+  if (!ref) throw new Error('缺少 <会话> 参数，先运行 sharechat list 看看');
   if (/^\d+$/.test(ref)) {
     const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
     const hit = saved[Number(ref) - 1];
-    if (!hit) throw new Error(`编号 ${ref} 不存在，请重新运行 openchat list`);
+    if (!hit) throw new Error(`编号 ${ref} 不存在，请重新运行 sharechat list`);
     return hit;
   }
   let [agent, key] = ref.includes(':') ? ref.split(/:(.*)/s) : [null, ref];
@@ -109,7 +109,7 @@ function cmdList(opts) {
     console.log(`${String(i + 1).padStart(3)}  ${when}  ${s.agent.padEnd(8)} ${s.id.slice(0, 8)}  ${oneLine(s.title || '(无标题)', 50)}`);
     if (s.cwd) console.log(`     ${' '.repeat(16)}  ${''.padEnd(8)} ${s.cwd}`);
   });
-  console.log('\n下一步：openchat handoff <编号> --to <agent>，或在项目目录里 openchat switch <agent>');
+  console.log('\n下一步：sharechat handoff <编号> --to <agent>，或在项目目录里 sharechat switch <agent>');
 }
 
 function cmdShow(opts) {
@@ -183,7 +183,7 @@ function cmdSwitch(opts) {
   else {
     const from = opts.from ? [opts.from] : Object.keys(AGENTS).filter((a) => a !== target.id);
     meta = collect({ agent: from.join(',') }).find((s) => samePath(s.cwd, cwd));
-    if (!meta) throw new Error(`当前目录 ${cwd} 下没有找到${opts.from ? ` ${opts.from} 的` : '其他 agent 的'}会话，可以用 openchat list 查看后用 -s 指定`);
+    if (!meta) throw new Error(`当前目录 ${cwd} 下没有找到${opts.from ? ` ${opts.from} 的` : '其他 agent 的'}会话，可以用 sharechat list 查看后用 -s 指定`);
   }
   transfer(meta, target, cwd, opts);
 }
@@ -206,7 +206,7 @@ try {
   else if (cmd === 'handoff' || cmd === 'to') cmdHandoff(opts);
   else if (cmd === 'switch' || cmd === 'sw') cmdSwitch(opts);
   else if (cmd === 'agents') cmdAgents();
-  else throw new Error(`未知命令 ${cmd}，运行 openchat help 查看用法`);
+  else throw new Error(`未知命令 ${cmd}，运行 sharechat help 查看用法`);
 } catch (e) {
   console.error(`错误：${e.message}`);
   process.exitCode = 1;

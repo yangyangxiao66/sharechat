@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
-  <title>openchat</title>
+  <title>sharechat</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body data-view="sessions">
   <div class="app">
     <header class="titlebar">
       <div class="brand">
@@ -16,9 +16,12 @@
           <path d="M9.4 12h5.2" ></path>
           <path d="M12.6 9.6 15 12l-2.4 2.4"></path>
         </svg>
-        <span class="brand-name">openchat</span>
-        <span class="brand-sub">会话接续</span>
+        <span class="brand-name">sharechat</span>
       </div>
+      <nav class="workspace-nav" aria-label="工作区">
+        <button type="button" data-view="sessions" class="active" aria-pressed="true">会话接续</button>
+        <button type="button" data-view="terminal" aria-pressed="false">终端矩阵</button>
+      </nav>
       <div class="titlebar-actions">
         <button class="icon-btn" id="refresh" title="刷新（Ctrl+R）" aria-label="刷新">
           <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 4v7h-7"></path></svg>
@@ -73,7 +76,7 @@
           <div class="relay-options">
             <label class="check">
               <input type="checkbox" id="opt-launch" checked>
-              <span>转换后在新终端中打开</span>
+              <span>转换后在内置终端中打开</span>
             </label>
             <label class="model" id="model-row" hidden>
               <span>续聊模型</span>
@@ -96,6 +99,9 @@
         </section>
       </div>
     </main>
+    <section id="terminal-host" class="terminal-host-placeholder" hidden aria-label="内置终端矩阵">
+      <p id="terminal-loading" role="status">正在加载终端矩阵…</p>
+    </section>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
