@@ -4,7 +4,13 @@
 //   opencode session export <id>      (SessionTransfer.Data: { info, messages })
 // Both the v2 message shape (type: user|assistant|shell|compaction...) and the
 // v1 shape ({ info: { role }, parts: [...] }) are understood.
-import { runCli, toText } from '../util.js';
+//
+// The CLI is project-scoped: it only sees sessions of the project its cwd
+// belongs to (git root commit, else "global"; src/project/project.ts). So we
+// list from the home directory (global) and the current directory, and export
+// from the session's own directory.
+import fs from 'node:fs';
+import { runCli, toText, HOME } from '../util.js';
 import { newSession, Builder } from '../session.js';
 
 export const id = 'opencode';
@@ -23,14 +29,22 @@ const ms = (v) => (typeof v === 'number' ? new Date(v).toISOString() : v || null
 const dirOf = (info) => info?.directory || info?.location?.directory || info?.path || '';
 
 export function list() {
-  const data = parseJsonOut(runCli('opencode', ['session', 'list', '--format', 'json', '-n', '200']));
-  const rows = Array.isArray(data) ? data : data?.data || [];
-  return rows.map((r) => ({
-    agent: id, id: r.id, file: null,
-    cwd: dirOf(r), title: r.title || '',
-    createdAt: ms(r.time?.created ?? r.created), updatedAt: ms(r.time?.updated ?? r.updated),
-  }));
+  const seen = new Map();
+  for (const cwd of new Set([HOME, process.cwd()])) {
+    const data = parseJsonOut(runCli('opencode', ['session', 'list', '--format', 'json', '-n', '200'], { cwd }));
+    for (const r of Array.isArray(data) ? data : data?.data || []) {
+      if (!r?.id || seen.has(r.id)) continue;
+      seen.set(r.id, {
+        agent: id, id: r.id, file: null,
+        cwd: dirOf(r), title: r.title || '',
+        createdAt: ms(r.time?.created ?? r.created), updatedAt: ms(r.time?.updated ?? r.updated),
+      });
+    }
+  }
+  return [...seen.values()];
 }
+
+const cwdFor = (meta) => (meta.cwd && fs.existsSync(meta.cwd) ? meta.cwd : HOME);
 
 function toolOutput(state) {
   if (!state) return '';
@@ -86,8 +100,9 @@ function loadV2(b, s, messages) {
 }
 
 export function load(meta) {
-  const out = runCli('opencode', ['session', 'export', meta.id], { timeout: 120000 })
-    ?? runCli('opencode', ['export', meta.id], { timeout: 120000 });
+  const opts = { timeout: 120000, cwd: cwdFor(meta) };
+  const out = runCli('opencode', ['session', 'export', meta.id], opts)
+    ?? runCli('opencode', ['export', meta.id], opts);
   const data = parseJsonOut(out);
   if (!data) throw new Error(`opencode 导出会话 ${meta.id} 失败（确认 opencode 已安装且会话存在）`);
   const info = data.info || {};

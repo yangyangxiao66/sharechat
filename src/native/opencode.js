@@ -51,7 +51,7 @@ function pickModel(preferred) {
   if (preferred) return split(preferred);
   try {
     const latest = reader.list().sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
-    const out = latest && runCli('opencode', ['export', latest.id], { timeout: 120000 });
+    const out = latest && runCli('opencode', ['export', latest.id], { timeout: 120000, cwd: latest.cwd && fs.existsSync(latest.cwd) ? latest.cwd : os.homedir() });
     const data = out && JSON.parse(out.slice(out.indexOf('{')));
     const user = data && [...data.messages].reverse().find((m) => m.info?.role === 'user' && m.info.model);
     const recent = user && `${user.info.model.providerID}/${user.info.model.modelID}`;

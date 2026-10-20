@@ -61,10 +61,17 @@ sharechat handoff codex:01a116 --to claude   # 转换任意会话，在原会话
 | Gemini CLI | 原生会话：`~/.gemini/tmp/<project>/chats/session-*.jsonl` | `gemini --resume <id>` |
 | OpenCode | 官方 `opencode import`，导入 `opencode export` 格式的 JSON | `opencode --session <id>` |
 | Grok Build | 原生会话目录：`~/.grok/sessions/<cwd>/<id>/`（`chat_history.jsonl`、`updates.jsonl`、`summary.json`） | `grok --resume <id>` |
+| Cursor（桌面端） | 写入 Cursor 全局数据库 `state.vscdb`：会话头、界面消息、模型历史 | `cursor <项目目录>`，在右侧 Agents 列表里打开 |
 
 OpenCode 续聊用的模型：如果你最近用过的模型还在 `opencode models` 列表里，就继续用它；否则优先选你自己配置的服务商，不用 OpenCode 的免费模型。也可以用 `--model 服务商/模型` 指定。
 
 原会话不会被修改。每次切换都会在目标 agent 里新建一个会话，标题后面带「（来自 XX）」。
+
+**切换到 Cursor 的前提**：
+- 转换前要先完全退出 Cursor。Cursor 运行时会用内存里的数据覆盖写进去的会话，所以检测到 Cursor 在运行时会直接拒绝。
+- 项目目录要先在 Cursor 里打开过一次，这样 Cursor 才会为它分配工作区 ID。
+- 本机至少要有一个用 Agent 聊过的 Cursor 会话，用作数据结构的模板。
+- 每次写入前，会自动把 `state.vscdb` 备份到 `~/.sharechat/backups/cursor/`，保留最近 3 份。
 
 **工具调用怎么处理**：工具调用和结果会写成文本，格式和 Codex 官方的外部会话导入器一致，形如 `[external_agent_tool_call: Bash] … [/external_agent_tool_call]`，结果超过 4000 字符会截断。原因是不同 agent 的工具集互不兼容，一个找不到匹配结果的原生工具调用会让历史失效。所以新 agent 知道之前做过什么，但文件内容要以磁盘为准，它会自己重新读取。
 
@@ -83,6 +90,13 @@ OpenCode 续聊用的模型：如果你最近用过的模型还在 `opencode mod
   - 不写 system 记录：冷加载时 Grok 会调用 `replace_or_insert_system_head`（`xai-chat-state/src/conversation_util.rs`），自动在开头插入当前的系统提示。
   - Grok 自带的外部会话恢复（`xai-grok-foreign-sessions`，以及会话选择器里的 Claude、Codex、Cursor 条目）只会执行 `/resume-claude <id>` 或 `/resume-codex <id>` 技能，生成一段摘要接着做，不会导入真实的历史消息。
 
+- **Cursor**（闭源，参照 Codex 的 `records_cur.rs` 和 Grok 的 `resume-session/session_reader.py`，并对照本机数据推导）：
+  - 会话登记在全局数据库的 `composerHeaders` 表里，通过 `workspaceId` 关联到 `workspaceStorage/<id>/workspace.json` 里的项目目录。
+  - `cursorDiskKV` 里的 `composerData:<id>` 是会话本体，`bubbleId:<id>:<bubbleId>` 是界面上的每条消息。
+  - 模型真正看到的历史在 `composerData.conversationState`：`~` 加上 base64 编码的 protobuf，其中 field 1 按顺序列出每条消息的 sha256，消息正文存在 `agentKv:blob:<sha256>`，格式是 AI SDK 消息 `{role, content}`。
+  - 写入时拿本机最近一个真实会话作模板，沿用它的系统提示，把 `<user_info>` 里的工作区路径改成目标项目。
+  - 读取时会去掉系统提示、`<user_info>`，以及 Cursor 注入的 `<system_notification>` 后台通知。
+
 ## 已验证
 
 | 目标 | 验证结果 |
@@ -93,8 +107,9 @@ OpenCode 续聊用的模型：如果你最近用过的模型还在 `opencode mod
 | Qwen Code 0.25.2 | ⚠️ `qwen sessions list` 能识别导入的会话和标题；没有账号，没测续聊 |
 | Gemini CLI 0.64.0 | ⚠️ `gemini --list-sessions` 能识别导入的会话，文件不会被清理；没有账号，没测续聊 |
 | Grok Build 1.0.41 | ⚠️ `grok sessions list` 能识别导入的会话，`grok export` 能完整读出内容；未登录，没测续聊 |
+| Cursor 3.17.8 | ✅ 在隔离的数据目录（`--user-data-dir`）里运行真实 Cursor：导入的会话出现在 Agents 列表里，内容显示正常；提问后，模型能准确回答 Claude 历史里执行过的命令和生成的文件 |
 
-`npm test` 覆盖每家的读取器，以及 5 个直接写文件的原生写入器的往返测试（写入后再用该 agent 自己的读取器读回）。
+`npm test` 覆盖每家的读取器，以及直接写文件的原生写入器的往返测试（写入后再用该 agent 自己的读取器读回）；Cursor 部分用一个结构和真实数据库一致的假数据库来测。
 
 ## 新增一个 agent
 

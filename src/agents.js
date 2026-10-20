@@ -4,8 +4,9 @@ import * as gemini from './adapters/gemini.js';
 import * as qwen from './adapters/qwen.js';
 import * as opencode from './adapters/opencode.js';
 import * as grok from './adapters/grok.js';
+import * as cursor from './adapters/cursor.js';
 
-export const AGENTS = { claude, codex, grok, qwen, gemini, opencode };
+export const AGENTS = { claude, codex, cursor, grok, qwen, gemini, opencode };
 
 export function getAgent(name) {
   const a = AGENTS[String(name).toLowerCase()];

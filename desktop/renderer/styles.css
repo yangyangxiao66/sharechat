@@ -20,6 +20,7 @@
 
   --claude: #d9774b;
   --codex: #3f8f6b;
+  --cursor: #4a5568;
   --grok: #7c6cf0;
   --qwen: #5b7cfa;
   --gemini: #2aa7c9;
@@ -343,6 +344,7 @@ body[data-view="terminal"] .app > .detail { display: none; }
 /* per-agent identity colour (CSP forbids inline style attributes) */
 .a-claude { --c: var(--claude); }
 .a-codex { --c: var(--codex); }
+.a-cursor { --c: var(--cursor); }
 .a-grok { --c: var(--grok); }
 .a-qwen { --c: var(--qwen); }
 .a-gemini { --c: var(--gemini); }

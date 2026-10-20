@@ -1,7 +1,7 @@
 const api = window.sharechat;
 const $ = (id) => document.getElementById(id);
 
-const GLYPH = { claude: 'C', codex: 'X', grok: 'G', qwen: 'Q', gemini: 'Ge', opencode: 'O' };
+const GLYPH = { claude: 'C', codex: 'X', cursor: 'Cu', grok: 'G', qwen: 'Q', gemini: 'Ge', opencode: 'O' };
 const state = {
   agents: [],
   sessions: [],
