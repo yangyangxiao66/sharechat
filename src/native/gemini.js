@@ -8,6 +8,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { home } from '../adapters/gemini.js';
 import { readJson } from '../util.js';
 import { flatten, timeline } from './flatten.js';
+import { historyBudget } from './budget.js';
 
 const normalize = (p) => {
   const r = path.resolve(p);
@@ -36,8 +37,8 @@ function projectDir(cwd) {
   return dir;
 }
 
-export function writeGeminiSession(session, sourceLabel, { cwd }) {
-  const msgs = flatten(session, sourceLabel);
+export function writeGeminiSession(session, sourceLabel, { cwd, maxTokens }) {
+  const msgs = flatten(session, sourceLabel, { maxTokens: maxTokens ?? historyBudget('gemini') });
   const times = timeline(msgs);
   const sessionId = randomUUID();
   const now = new Date();

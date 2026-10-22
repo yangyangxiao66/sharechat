@@ -42,6 +42,7 @@ switch / handoff 选项:
   --cwd <目录>         目标 agent 的工作目录（handoff 默认用原会话目录，switch 默认用当前目录）
   --doc               不做原生写入，改用交接文档
   --model <p/m>       目标为 opencode 时指定续聊模型（默认优先用你自己配置的服务商）
+  --max-tokens <n>    写入历史的 token 上限，超出时先去掉旧工具输出、再省略最早的消息（默认按目标模型的上下文窗口自动计算；0 不限制）
 `;
 
 function parseArgs(argv) {
@@ -146,7 +147,8 @@ function transfer(meta, target, cwd, opts) {
 
   const write = NATIVE[target.id];
   if (write && !opts.doc) {
-    const r = write(session, source.label, { cwd, model: opts.model });
+    const maxTokens = opts['max-tokens'] == null ? undefined : Number(opts['max-tokens']);
+    const r = write(session, source.label, { cwd, model: opts.model, maxTokens });
     console.log(`已转换为 ${target.label} 原生会话 ${r.sessionId}\n  ${r.file}`);
     return launch(r.resume, cwd, opts['no-launch']);
   }

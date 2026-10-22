@@ -15,6 +15,7 @@ import { home, list } from '../adapters/grok.js';
 import { readJson } from '../util.js';
 import { flatten, timeline, uuidv7 } from './flatten.js';
 import { blake3Hex } from './blake3.js';
+import { historyBudget } from './budget.js';
 
 // Rust `urlencoding::encode`: everything but A-Z a-z 0-9 - _ . ~ is escaped
 // (unlike encodeURIComponent, which keeps ! ' ( ) *).
@@ -50,8 +51,8 @@ function pickModel() {
   return offered[0] || 'grok-4.7';
 }
 
-export function writeGrokSession(session, sourceLabel, { cwd }) {
-  const msgs = flatten(session, sourceLabel);
+export function writeGrokSession(session, sourceLabel, { cwd, maxTokens }) {
+  const msgs = flatten(session, sourceLabel, { maxTokens: maxTokens ?? historyBudget('grok') });
   const times = timeline(msgs);
   const id = uuidv7();
   const history = [];

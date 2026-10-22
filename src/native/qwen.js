@@ -8,14 +8,15 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { home } from '../adapters/qwen.js';
 import { flatten, timeline } from './flatten.js';
+import { historyBudget } from './budget.js';
 
 export function sanitizeCwd(cwd) {
   const p = process.platform === 'win32' ? cwd.toLowerCase() : cwd;
   return p.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
-export function writeQwenSession(session, sourceLabel, { cwd }) {
-  const msgs = flatten(session, sourceLabel);
+export function writeQwenSession(session, sourceLabel, { cwd, maxTokens }) {
+  const msgs = flatten(session, sourceLabel, { maxTokens: maxTokens ?? historyBudget('qwen') });
   const times = timeline(msgs);
   const sessionId = randomUUID();
   let parentUuid = null;

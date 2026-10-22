@@ -10,6 +10,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { runCli } from '../util.js';
 import { flatten, timeline } from './flatten.js';
+import { budgetFromContext } from './budget.js';
 import * as reader from '../adapters/opencode.js';
 
 const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
@@ -62,10 +63,23 @@ function pickModel(preferred) {
   return split(own || available[0] || 'opencode/big-pickle');
 }
 
-export function writeOpencodeSession(session, sourceLabel, { cwd, model: preferred }) {
-  const msgs = flatten(session, sourceLabel);
-  const times = timeline(msgs).map((d) => d.getTime());
+// Token budget for the imported history. OpenCode compacts by sending the
+// whole history to the model, so it must fit with room for the summary prompt
+// and output; `opencode models --verbose` reports each model's limits.
+function modelBudget(model) {
+  const out = runCli('opencode', ['models', model.providerID, '--verbose'], { timeout: 120000 }) || '';
+  // Output is "<provider>/<model>" lines, each followed by a JSON object.
+  const blocks = out.split(/^(?=[^\s{}"]+\/\S+\r?$)/m);
+  const block = blocks.find((b) => b.split(/\r?\n/)[0].trim() === `${model.providerID}/${model.modelID}`);
+  let limit;
+  try { limit = JSON.parse(block.slice(block.indexOf('{'))).limit; } catch { /* unknown model */ }
+  return budgetFromContext(limit?.context, limit?.output);
+}
+
+export function writeOpencodeSession(session, sourceLabel, { cwd, model: preferred, maxTokens }) {
   const model = pickModel(preferred);
+  const msgs = flatten(session, sourceLabel, { maxTokens: maxTokens ?? modelBudget(model) });
+  const times = timeline(msgs).map((d) => d.getTime());
   const now = Date.now();
   const sessionID = opencodeId('ses', now, true);
   const messages = [];

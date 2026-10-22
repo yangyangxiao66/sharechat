@@ -19,6 +19,7 @@ import { HOME } from '../util.js';
 import { openDb, blobText } from '../sqlite.js';
 import { globalDbPath, workspaceIdFor, isCursorRunning, stateHashes, decodeFields, encodeFields } from '../cursor-store.js';
 import { flatten, timeline } from './flatten.js';
+import { historyBudget } from './budget.js';
 
 const BACKUPS_KEPT = 3;
 const parse = (v) => { try { return JSON.parse(blobText(v)); } catch { return null; } };
@@ -90,7 +91,7 @@ function conversationState(template, hashes, cwd) {
   return '~' + encodeFields(fields).toString('base64');
 }
 
-export function writeCursorSession(session, sourceLabel, { cwd }) {
+export function writeCursorSession(session, sourceLabel, { cwd, maxTokens }) {
   // The process check guards the real Cursor DB; tests point CURSOR_USER_DIR at a scratch copy.
   if (!process.env.SHARECHAT_CURSOR_SKIP_PROCESS_CHECK && isCursorRunning()) {
     throw new Error('请先完全退出 Cursor 再转换：Cursor 运行时会用内存里的数据覆盖写入的会话');
@@ -104,7 +105,7 @@ export function writeCursorSession(session, sourceLabel, { cwd }) {
   const db = openDb(dbFile, { readOnly: false });
   try {
     const t = loadTemplate(db, workspaceId);
-    const msgs = flatten(session, sourceLabel);
+    const msgs = flatten(session, sourceLabel, { maxTokens: maxTokens ?? historyBudget('cursor') });
     const times = timeline(msgs).map((d) => d.toISOString());
     const composerId = randomUUID();
     const now = Date.now();

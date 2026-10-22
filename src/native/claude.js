@@ -5,13 +5,14 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { home } from '../adapters/claude.js';
 import { flatten, timeline } from './flatten.js';
+import { historyBudget } from './budget.js';
 
 export function projectSlug(cwd) {
   return path.resolve(cwd).replace(/[^a-zA-Z0-9]/g, '-');
 }
 
-export function writeClaudeSession(session, sourceLabel, { cwd }) {
-  const msgs = flatten(session, sourceLabel);
+export function writeClaudeSession(session, sourceLabel, { cwd, maxTokens }) {
+  const msgs = flatten(session, sourceLabel, { maxTokens: maxTokens ?? historyBudget('claude') });
   const times = timeline(msgs);
   const sessionId = randomUUID();
   const base = { isSidechain: false, userType: 'external', entrypoint: 'cli', cwd, sessionId, version: '2.0.0', gitBranch: '' };

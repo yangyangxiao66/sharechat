@@ -13,12 +13,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { home } from '../adapters/codex.js';
 import { flatten, timeline, uuidv7 } from './flatten.js';
+import { historyBudget } from './budget.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 const fileStamp = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}-${pad(d.getUTCMinutes())}-${pad(d.getUTCSeconds())}`;
 
-export function writeCodexSession(session, sourceLabel, { cwd }) {
-  const msgs = flatten(session, sourceLabel);
+export function writeCodexSession(session, sourceLabel, { cwd, maxTokens }) {
+  const msgs = flatten(session, sourceLabel, { maxTokens: maxTokens ?? historyBudget('codex') });
   const times = timeline(msgs);
   const id = uuidv7();
   const now = new Date();

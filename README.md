@@ -75,7 +75,7 @@ OpenCode 续聊用的模型：如果你最近用过的模型还在 `opencode mod
 
 **工具调用怎么处理**：工具调用和结果会写成文本，格式和 Codex 官方的外部会话导入器一致，形如 `[external_agent_tool_call: Bash] … [/external_agent_tool_call]`，结果超过 4000 字符会截断。原因是不同 agent 的工具集互不兼容，一个找不到匹配结果的原生工具调用会让历史失效。所以新 agent 知道之前做过什么，但文件内容要以磁盘为准，它会自己重新读取。
 
-**长会话**：写入时会附上 token 估算，Codex 读取 `token_count`，Claude 读取最后一条 usage。超出上下文窗口时，目标 agent 会自动压缩，而不是直接报错。
+**长会话**：目标 agent 压缩时会把整段历史发给模型做摘要，历史本身超过模型上下文就无法压缩。所以写入前会按 token 预算裁剪：先把较早消息里的工具输出缩成一行，仍超出就省略最早的消息（始终保留第一条用户请求，并注明省略了多少条），最近 6 条保持原样。预算按目标模型的上下文窗口计算：(上下文 − 输出上限) × 0.6。各 agent 的上下文来源：OpenCode 读 `opencode models --verbose`；Codex 读 config.toml 的 `model_context_window`，没有就查 `models_cache.json`；Grok 读 `models_cache.json`；Claude Code 按 200k 算（`[1m]` 模型按 1M），如果 `ANTHROPIC_BASE_URL` 指向第三方服务，按 128k 算；Qwen Code 的 qwen3-coder 按 1M 算，其他模型按 128k 算；Gemini 按 1M 算；Cursor 按 200k 算。读不到时预算默认 120000 token；可用 `--max-tokens <n>` 指定，`0` 表示不裁剪。写入时还会附上 token 估算，Codex 读取 `token_count`，Claude 读取最后一条 usage，让目标 agent 及时自动压缩。
 
 ## 格式依据（官方源码）
 
