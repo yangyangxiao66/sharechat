@@ -20,11 +20,14 @@
 
   --claude: #d9774b;
   --codex: #3f8f6b;
+  --chatgpt: #10a37f;
   --cursor: #4a5568;
+  --workbuddy: #2a9fd6;
   --grok: #7c6cf0;
   --qwen: #5b7cfa;
   --gemini: #2aa7c9;
   --opencode: #c9a227;
+  --qoder: #6f5bd6;
 
   --radius: 10px;
 
@@ -89,10 +92,8 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
   user-select: none;
 }
 .platform-darwin .titlebar { padding-left: 84px; padding-right: 16px; }
-.brand { display: flex; align-items: center; gap: 8px; }
-.mark { width: 20px; height: 20px; }
-.mark circle { fill: var(--ink); stroke: none; }
-.mark path { stroke: var(--ink); }
+.brand { display: flex; align-items: center; gap: 9px; }
+.mark { width: 28px; height: 22px; object-fit: contain; flex: none; }
 .brand-name { font-weight: 650; letter-spacing: -0.01em; }
 .brand-sub { color: var(--ink-3); font-size: 12px; padding-left: 8px; border-left: 1px solid var(--line-2); }
 .titlebar-actions { -webkit-app-region: no-drag; }
@@ -344,8 +345,11 @@ body[data-view="terminal"] .app > .detail { display: none; }
 /* per-agent identity colour (CSP forbids inline style attributes) */
 .a-claude { --c: var(--claude); }
 .a-codex { --c: var(--codex); }
+.a-chatgpt { --c: var(--chatgpt); }
 .a-cursor { --c: var(--cursor); }
+.a-workbuddy { --c: var(--workbuddy); }
 .a-grok { --c: var(--grok); }
 .a-qwen { --c: var(--qwen); }
 .a-gemini { --c: var(--gemini); }
 .a-opencode { --c: var(--opencode); }
+.a-qoder { --c: var(--qoder); }

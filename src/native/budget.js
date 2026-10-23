@@ -71,6 +71,7 @@ const CONTEXT = {
   qwen: qwenContext,
   gemini: () => 1048576,
   cursor: () => 200000,
+  workbuddy: () => 300000,
 };
 
 export function historyBudget(agentId) {

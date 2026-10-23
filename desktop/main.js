@@ -1,12 +1,18 @@
 import { app, BrowserWindow, ipcMain, nativeTheme, shell, clipboard } from 'electron';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { commandLine } from '../src/core.js';
+import { assertClaudeLaunchAllowed } from '../src/claude-guard.js';
+import { withSkipPermissions } from './resume-command.js';
 import { TerminalHost } from './terminal-host.js';
 import { sessionTask, stopSessionTasks } from './session-tasks.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 app.setName('sharechat');
+// Windows groups taskbar buttons by AppUserModelID; without a dedicated one the
+// dev build inherits electron.exe's atom icon instead of the sharechat logo.
+if (process.platform === 'win32') app.setAppUserModelId('io.github.yangyangxiao66.sharechat');
 let mainWindow = null;
 let terminalHost = null;
 
@@ -21,6 +27,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 600,
     title: 'sharechat',
+    icon: path.join(here, 'renderer', 'assets', 'sharechat-icon.png'),
     autoHideMenuBar: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#16171b' : '#f4f2ee',
     titleBarStyle: 'hidden',
@@ -89,20 +96,56 @@ handle('workspace:view', async mode => {
   return { mode: terminalHost.visible ? 'terminal' : 'sessions' };
 });
 
-handle('convert', async ({ meta, target, model, launch }) => {
-  if (launch) await terminalHost.ensure();
-  const r = await sessionTask('convert', { meta, target, model });
-  const command = commandLine(r.resume);
+async function launchWorkBuddyApp(appPath) {
+  if (!appPath) throw new Error('会话已写入，但没有找到 WorkBuddy 可执行文件，请手动打开 WorkBuddy');
+  await new Promise((resolve, reject) => {
+    const child = spawn(appPath, [], { detached: true, stdio: 'ignore' });
+    child.once('error', reject);
+    child.once('spawn', () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+
+handle('convert', async ({ meta, target, model, launch, skipPermissions }) => {
+  const isSelfResume = target === meta.agent;
+  if (launch && target === 'claude') await assertClaudeLaunchAllowed();
+  if (launch && target !== 'workbuddy' && target !== 'chatgpt') await terminalHost.ensure();
+  const r = isSelfResume
+    ? await sessionTask('resume', { meta })
+    : await sessionTask('convert', { meta, target, model });
+  const resume = skipPermissions === true && r.resume ? withSkipPermissions(r.resume) : r.resume;
+  const result = resume === r.resume ? r : { ...r, resume };
+  const command = result.openUrl || (result.resume ? commandLine(result.resume) : '');
   let terminalId = null;
   let launchError = null;
+  let launchedApp = null;
   if (launch) {
-    try { terminalId = await terminalHost.launch(r); }
-    catch (error) {
-      launchError = error.message;
-      await terminalHost?.setVisible(false);
+    if (result.openUrl) {
+      try {
+        await shell.openExternal(result.openUrl);
+        launchedApp = result.target;
+      } catch (error) {
+        launchError = error.message || String(error);
+      }
+    } else if (result.target === 'workbuddy') {
+      try {
+        await launchWorkBuddyApp(result.workbuddyApp);
+        launchedApp = 'workbuddy';
+      } catch (error) {
+        launchError = error.message || String(error);
+      }
+    } else {
+      try {
+        terminalId = await terminalHost.launch(result);
+      } catch (error) {
+        launchError = error.message;
+        await terminalHost?.setVisible(false);
+      }
     }
   }
-  return { ...r, command, terminalId, launchError };
+  return { ...result, command, terminalId, launchError, launchedApp };
 });
 
 handle('opencode:models', () => sessionTask('models'));

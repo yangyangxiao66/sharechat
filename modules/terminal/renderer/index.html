@@ -444,6 +444,11 @@
           <div id="launchpadGrid" class="launchpad-grid" aria-live="polite"></div>
         </section>
 
+        <label class="launchpad-toggle" for="launchpadSkipPermissions">
+          <input id="launchpadSkipPermissions" type="checkbox" />
+          <span>Claude Code 全权限：启动时追加 <code>--dangerously-skip-permissions</code>，不再逐条询问 yes / no（仅对 Claude Code 生效）</span>
+        </label>
+
         <label class="launchpad-toggle" for="agentNotifyToggle">
           <input id="agentNotifyToggle" type="checkbox" />
           <span>Agent 等待输入 / 需要确认时发送桌面通知（窗口不在前台或不在当前终端时）</span>

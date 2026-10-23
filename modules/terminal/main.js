@@ -7,6 +7,7 @@ const pty = require("node-pty");
 const { RemoteBridgeServer } = require("./remote/bridge-server");
 const { createSsh2ShellHandle, shouldUseSsh2Shell } = require("./remote/shell-handle");
 const { AGENTS, installAgentMcp, resolveAgentCli } = require("./agent/mcp-installer");
+const { agentEnvironment } = require("./agent/environment");
 const {
   buildInstallCommand,
   buildLaunchCommand,
@@ -79,7 +80,7 @@ function getFreshWindowsPath() {
 
 function buildShellEnv() {
   const env = {
-    ...process.env,
+    ...agentEnvironment(process.env),
     TERM: "xterm-256color",
     COLORTERM: "truecolor",
   };
@@ -1136,7 +1137,7 @@ ipcMain.handle("launchpad:choose-directory", async (event, defaultPath) => {
  * 渲染进程只提交 agent id / 模式 / 目录 / 额外参数；命令文本在这里按白名单生成。
  * 目录必须真实存在，避免 createTerminal 静默回退到其他目录。
  */
-ipcMain.handle("launchpad:prepare", (_event, request = {}) => {
+ipcMain.handle("launchpad:prepare", async (_event, request = {}) => {
   try {
     const agent = launchpadAgent(request.agent);
     const mode = request.mode === "install" ? "install" : "launch";
@@ -1144,8 +1145,16 @@ ipcMain.handle("launchpad:prepare", (_event, request = {}) => {
     if (mode === "launch" && !isExistingDirectory(cwd)) {
       return { ok: false, error: "工作目录不存在，请重新选择" };
     }
+    if (mode === "launch" && agent.id === "claude") {
+      const { assertClaudeLaunchAllowed } = await import("../../src/claude-guard.js");
+      await assertClaudeLaunchAllowed();
+    }
     const command =
-      mode === "install" ? buildInstallCommand(agent.id) : buildLaunchCommand(agent.id, request.args);
+      mode === "install"
+        ? buildInstallCommand(agent.id)
+        : buildLaunchCommand(agent.id, request.args, {
+            skipPermissions: request.skipPermissions === true,
+          });
     return {
       ok: true,
       agent: agent.id,

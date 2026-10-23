@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import { agentInfo, listSessions, loadSession, convertSession } from '../src/core.js';
+import { agentInfo, listSessions, loadSession, convertSession, resumeNativeSession } from '../src/core.js';
 import { summarizeInput } from '../src/render.js';
 import { clip, runCli } from '../src/util.js';
 
@@ -29,6 +29,7 @@ try {
     data = { rows, errors };
   } else if (operation === 'load') data = preview(loadSession(args.meta).session);
   else if (operation === 'convert') data = convertSession(args.meta, args.target, { model: args.model || undefined });
+  else if (operation === 'resume') data = resumeNativeSession(args.meta);
   else if (operation === 'models') data = (runCli('opencode', ['models'], { timeout: 120000 }) || '')
     .split(/\r?\n/).map(line => line.trim()).filter(line => /^[^\s/]+\/\S+$/.test(line));
   else throw new Error('未知会话操作');

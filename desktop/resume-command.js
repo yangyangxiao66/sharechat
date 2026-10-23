@@ -1,4 +1,4 @@
-const COMMANDS = new Set(['claude', 'codex', 'grok', 'qwen', 'gemini', 'opencode']);
+const COMMANDS = new Set(['claude', 'codex', 'grok', 'qwen', 'gemini', 'opencode', 'qoder']);
 
 // Resume arguments are data, including model names and paths. Never interpolate
 // them as PowerShell expressions or reuse the CLI's cmd.exe quoting rules.
@@ -11,4 +11,12 @@ export function resumeCommand(resume) {
     return `'${value.replace(/'/g, "''")}'`;
   };
   return `& ${[resume.cmd, ...resume.args].map(quote).join(' ')}`;
+}
+
+// Claude Code can skip every permission prompt; opt-in only.
+export function withSkipPermissions(resume) {
+  if (!resume || resume.cmd !== 'claude' || !Array.isArray(resume.args)) return resume;
+  const flag = '--dangerously-skip-permissions';
+  if (resume.args.includes(flag)) return resume;
+  return { ...resume, args: [flag, ...resume.args] };
 }

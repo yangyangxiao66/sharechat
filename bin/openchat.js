@@ -6,6 +6,7 @@ import { AGENTS, getAgent } from '../src/agents.js';
 import { renderHandoff } from '../src/render.js';
 import { NATIVE } from '../src/native/index.js';
 import { listSessions } from '../src/core.js';
+import { assertClaudeLaunchAllowed } from '../src/claude-guard.js';
 import { HOME, exists, samePath, oneLine, quoteArg } from '../src/util.js';
 
 const HELP = `sharechat — 在不同编程 agent 之间无缝切换会话
@@ -35,7 +36,7 @@ const HELP = `sharechat — 在不同编程 agent 之间无缝切换会话
   01a116         在所有 agent 中按 ID 前缀匹配
 
 switch / handoff 选项:
-  --to, -t <agent>    目标：${Object.keys(AGENTS).join(' | ')}
+  --to, -t <agent>    目标：${Object.keys(AGENTS).filter((a) => !AGENTS[a].sourceOnly).join(' | ')}
   --from, -f <agent>  switch 时只从这个 agent 里找会话
   --session, -s <会话> switch 时指定会话（默认当前目录最近的一个）
   --no-launch         只写入会话，打印启动命令，不启动
@@ -127,7 +128,7 @@ function cmdExport(opts) {
   else process.stdout.write(text);
 }
 
-function launch({ cmd, args }, cwd, noLaunch) {
+function launch({ cmd, args, detached = false }, cwd, noLaunch) {
   const line = [cmd, ...args.map(quoteArg)].join(' ');
   if (noLaunch) {
     console.log(`\n在 ${cwd} 中运行：\n  ${line}`);
@@ -135,12 +136,27 @@ function launch({ cmd, args }, cwd, noLaunch) {
   }
   console.log(`\n▶ ${line}\n`);
   const win = process.platform === 'win32';
-  const child = spawn(cmd, win ? args.map(quoteArg) : args, { cwd, stdio: 'inherit', shell: win });
+  const child = spawn(cmd, win ? args.map(quoteArg) : args, {
+    cwd,
+    detached,
+    stdio: detached ? 'ignore' : 'inherit',
+    shell: win,
+  });
+  if (detached) child.unref();
   child.on('error', (e) => { console.error(`启动 ${cmd} 失败：${e.message}`); process.exitCode = 1; });
   child.on('exit', (code) => { process.exitCode = code ?? 0; });
 }
 
+function openUrl(url) {
+  const win = process.platform === 'win32';
+  const child = win
+    ? spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' })
+    : spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], { detached: true, stdio: 'ignore' });
+  child.unref();
+}
+
 function transfer(meta, target, cwd, opts) {
+  if (target.sourceOnly) throw new Error(`${target.label} 目前只能作为会话来源，暂不支持作为目标`);
   const { agent: source, session } = load(meta);
   console.log(`来源：${source.label} · ${session.title || session.id}（${session.messages.length} 条消息）`);
   console.log(`目标：${target.label} · 目录 ${cwd}`);
@@ -150,6 +166,15 @@ function transfer(meta, target, cwd, opts) {
     const maxTokens = opts['max-tokens'] == null ? undefined : Number(opts['max-tokens']);
     const r = write(session, source.label, { cwd, model: opts.model, maxTokens });
     console.log(`已转换为 ${target.label} 原生会话 ${r.sessionId}\n  ${r.file}`);
+    if (r.openUrl) {
+      if (opts['no-launch']) {
+        console.log(`\n在 ${target.label} 中打开：\n  ${r.openUrl}`);
+        return;
+      }
+      console.log(`\n▶ ${r.openUrl}\n`);
+      openUrl(r.openUrl);
+      return;
+    }
     return launch(r.resume, cwd, opts['no-launch']);
   }
   if (!write) console.log(`${target.label} 暂不支持原生写入，改用交接文档。`);
@@ -168,16 +193,18 @@ function transfer(meta, target, cwd, opts) {
   launch(target.launchCommand(prompt), cwd, opts['no-launch']);
 }
 
-function cmdHandoff(opts) {
+async function cmdHandoff(opts) {
   if (!opts.to) throw new Error('请用 --to 指定目标 agent');
   const meta = resolve(opts._[1], opts);
   const cwd = path.resolve(opts.cwd || (meta.cwd && exists(meta.cwd) ? meta.cwd : process.cwd()));
-  transfer(meta, getAgent(opts.to), cwd, opts);
+  const target = getAgent(opts.to);
+  if (target.id === 'claude' && !opts['no-launch']) await assertClaudeLaunchAllowed();
+  transfer(meta, target, cwd, opts);
 }
 
 // One-step switch: take the newest session for this directory from any other
 // agent and reopen it in the target.
-function cmdSwitch(opts) {
+async function cmdSwitch(opts) {
   const target = getAgent(opts._[1] || opts.to || '');
   const cwd = path.resolve(opts.cwd || process.cwd());
   let meta;
@@ -187,6 +214,7 @@ function cmdSwitch(opts) {
     meta = collect({ agent: from.join(',') }).find((s) => samePath(s.cwd, cwd));
     if (!meta) throw new Error(`当前目录 ${cwd} 下没有找到${opts.from ? ` ${opts.from} 的` : '其他 agent 的'}会话，可以用 sharechat list 查看后用 -s 指定`);
   }
+  if (target.id === 'claude' && !opts['no-launch']) await assertClaudeLaunchAllowed();
   transfer(meta, target, cwd, opts);
 }
 
@@ -205,8 +233,8 @@ try {
   else if (cmd === 'list' || cmd === 'ls') cmdList(opts);
   else if (cmd === 'show') cmdShow(opts);
   else if (cmd === 'export') cmdExport(opts);
-  else if (cmd === 'handoff' || cmd === 'to') cmdHandoff(opts);
-  else if (cmd === 'switch' || cmd === 'sw') cmdSwitch(opts);
+  else if (cmd === 'handoff' || cmd === 'to') await cmdHandoff(opts);
+  else if (cmd === 'switch' || cmd === 'sw') await cmdSwitch(opts);
   else if (cmd === 'agents') cmdAgents();
   else throw new Error(`未知命令 ${cmd}，运行 sharechat help 查看用法`);
 } catch (e) {

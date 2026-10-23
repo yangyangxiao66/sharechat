@@ -5,6 +5,7 @@
  */
 const LAUNCHPAD_RECENTS_KEY = "terminal-deck-launchpad-recent-dirs";
 const LAUNCHPAD_ARGS_KEY = "terminal-deck-launchpad-args";
+const LAUNCHPAD_SKIP_PERMISSIONS_KEY = "terminal-deck-launchpad-skip-permissions";
 const LAUNCHPAD_RECENTS_MAX = 5;
 
 const launchpadDialog = document.getElementById("launchpadDialog");
@@ -14,6 +15,7 @@ const launchpadPickDir = document.getElementById("launchpadPickDir");
 const launchpadRecents = document.getElementById("launchpadRecents");
 const launchpadRecentList = document.getElementById("launchpadRecentList");
 const launchpadArgs = document.getElementById("launchpadArgs");
+const launchpadSkipPermissions = document.getElementById("launchpadSkipPermissions");
 const launchpadGrid = document.getElementById("launchpadGrid");
 const launchpadDetectText = document.getElementById("launchpadDetectText");
 const launchpadRefresh = document.getElementById("launchpadRefresh");
@@ -59,6 +61,22 @@ function removeLaunchpadRecent(dir) {
 
 function currentLaunchpadDir() {
   return String(launchpadDir?.value || "").trim();
+}
+
+function loadLaunchpadSkipPermissions() {
+  try {
+    return localStorage.getItem(LAUNCHPAD_SKIP_PERMISSIONS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveLaunchpadSkipPermissions(enabled) {
+  try {
+    localStorage.setItem(LAUNCHPAD_SKIP_PERMISSIONS_KEY, enabled ? "1" : "0");
+  } catch {
+    // localStorage 不可用时只在本次会话生效
+  }
 }
 
 function setLaunchpadDir(dir) {
@@ -205,9 +223,16 @@ async function runLaunchpad(agent, mode) {
     return;
   }
   const args = mode === "launch" ? String(launchpadArgs?.value || "") : "";
+  const skipPermissions = mode === "launch" && agent.id === "claude" && loadLaunchpadSkipPermissions();
   launchpadBusy = true;
   try {
-    const prepared = await window.terminalDeck.prepareLaunchpad({ agent: agent.id, mode, cwd, args });
+    const prepared = await window.terminalDeck.prepareLaunchpad({
+      agent: agent.id,
+      mode,
+      cwd,
+      args,
+      skipPermissions,
+    });
     if (!prepared || !prepared.ok) {
       if (mode === "launch" && /工作目录不存在/.test(prepared?.error || "")) {
         removeLaunchpadRecent(cwd);
@@ -274,6 +299,9 @@ function openLaunchpad() {
   if (agentNotifyToggle && typeof isAgentNotifyEnabled === "function") {
     agentNotifyToggle.checked = isAgentNotifyEnabled();
   }
+  if (launchpadSkipPermissions) {
+    launchpadSkipPermissions.checked = loadLaunchpadSkipPermissions();
+  }
   launchpadDialog.hidden = false;
   requestAnimationFrame(() => {
     launchpadDialog.classList.add("is-open");
@@ -302,6 +330,9 @@ launchpadDialog?.addEventListener("click", (event) => {
 });
 agentNotifyToggle?.addEventListener("change", () => {
   if (typeof setAgentNotifyEnabled === "function") setAgentNotifyEnabled(agentNotifyToggle.checked);
+});
+launchpadSkipPermissions?.addEventListener("change", () => {
+  saveLaunchpadSkipPermissions(launchpadSkipPermissions.checked);
 });
 
 /* ── 欢迎页：问候语 + Agent 快速启动卡片（无会话时显示） ── */

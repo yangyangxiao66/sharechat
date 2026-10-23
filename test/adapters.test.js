@@ -59,6 +59,22 @@ test('codex: skips injected context, extracts request, pairs call outputs', () =
   assert.deepEqual(flat(AGENTS.codex.load(meta)), ['U:add tests', 'A:[shell=>x.rs]|ok']);
 });
 
+test('chatgpt desktop: separate source from Codex CLI sessions', () => {
+  const sid = '0199dddd-1111-7222-8333-444444444444';
+  write(`codex/sessions/2026/10/02/rollout-2026-10-02T00-00-00-${sid}.jsonl`, [
+    { type: 'session_meta', payload: { id: sid, cwd: '/desk', originator: 'Codex Desktop', source: 'vscode', thread_source: 'user', timestamp: '2026-10-02T00:00:00Z' } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'desktop hello' }] } },
+    { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] } },
+  ]);
+  const meta = AGENTS.chatgpt.list().find((m) => m.id === sid);
+  assert.ok(meta, 'ChatGPT desktop source should list its thread');
+  assert.equal(meta.agent, 'chatgpt');
+  assert.equal(AGENTS.codex.list().some((m) => m.id === sid), false);
+  const s = AGENTS.chatgpt.load(meta);
+  assert.equal(s.agent, 'chatgpt');
+  assert.deepEqual(flat(s), ['U:desktop hello', 'A:hi']);
+});
+
 test('grok: extracts user_query and tool results', () => {
   write('grok/sessions/%2Fg/01aa/summary.json', JSON.stringify({ info: { id: '01aa', cwd: '/g' }, generated_title: 'T' }));
   write('grok/sessions/%2Fg/01aa/chat_history.jsonl', [
@@ -151,6 +167,33 @@ for (const target of ['claude', 'codex', 'qwen', 'gemini', 'grok']) {
     assert.equal(texts[5], 'A:second');
   });
 }
+
+test('native chatgpt: writes a Codex Desktop thread and opens via deep link', () => {
+  write('codex/config.toml', ['model_provider = "custom"', 'model = "gpt-test"'].join('\n'));
+  const cwd = path.join(tmp, 'proj-chatgpt');
+  fs.mkdirSync(cwd, { recursive: true });
+  const r = NATIVE.chatgpt(sample(), 'WorkBuddy', { cwd });
+  assert.ok(fs.existsSync(r.file));
+  assert.equal(r.resume, undefined);
+  assert.equal(r.openUrl, `codex://threads/${r.sessionId}`);
+  const events = fs.readFileSync(r.file, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  const head = events[0].payload;
+  assert.equal(head.originator, 'Codex Desktop');
+  assert.equal(head.source, 'vscode');
+  assert.equal(head.thread_source, 'user');
+  assert.equal(head.history_mode, 'paginated');
+  assert.equal(head.model_provider, 'custom');
+  const completed = events.filter((e) => e.type === 'event_msg' && e.payload?.type === 'item_completed');
+  assert.equal(completed.length, 6);
+  assert.ok(completed.some((e) => e.payload.item.type === 'UserMessage'));
+  assert.ok(completed.some((e) => e.payload.item.type === 'AgentMessage'));
+  const meta = AGENTS.chatgpt.list().find((m) => m.id === r.sessionId);
+  assert.ok(meta, 'listed by the ChatGPT desktop source');
+  assert.equal(AGENTS.codex.list().some((m) => m.id === r.sessionId), false);
+  const s = AGENTS.chatgpt.load(meta);
+  assert.equal(s.agent, 'chatgpt');
+  assert.equal(flat(s).length, 6);
+});
 
 test('opencode ids: sessions sort newest first, messages oldest first', async () => {
   const { opencodeId } = await import('../src/native/opencode.js');

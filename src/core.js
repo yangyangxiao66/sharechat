@@ -3,13 +3,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { AGENTS, getAgent } from './agents.js';
-import { NATIVE } from './native/index.js';
+import { NATIVE, selfResume, canSelfResume } from './native/index.js';
 import { exists, samePath, quoteArg } from './util.js';
 
 export function agentInfo() {
   return Object.values(AGENTS).map((a) => {
     const h = a.home();
-    return { id: a.id, label: a.label, home: h, detected: h == null ? null : exists(h), canTarget: Boolean(NATIVE[a.id]) };
+    return {
+      id: a.id,
+      label: a.label,
+      home: h,
+      detected: h == null ? null : exists(h),
+      canTarget: Boolean(NATIVE[a.id]),
+      canSelfResume: canSelfResume(a.id),
+      sourceOnly: Boolean(a.sourceOnly),
+    };
   });
 }
 
@@ -41,6 +49,20 @@ export function convertSession(meta, targetId, { cwd, model } = {}) {
   if (!fs.existsSync(dir)) throw new Error(`工作目录不存在：${dir}`);
   const r = write(session, source.label, { cwd: dir, model });
   return { ...r, cwd: dir, source: source.id, target: target.id, title: session.title, messages: session.messages.length };
+}
+
+// Reopen a session in the agent that created it — no conversion, no new file.
+export function resumeNativeSession(meta) {
+  const agent = getAgent(meta.agent);
+  const cwd = typeof meta.cwd === 'string' ? meta.cwd : '';
+  if (!cwd || !exists(cwd)) throw new Error(`工作目录不存在：${cwd || '(未知)'}`);
+  const dir = path.resolve(cwd);
+  const resume = selfResume(agent.id, meta, dir);
+  if (!resume) throw new Error(`${agent.label} 暂不支持原生续聊`);
+  const result = { cwd: dir, source: agent.id, target: agent.id, title: meta.title, sessionId: meta.id, native: true };
+  if (resume.url) result.openUrl = resume.url;
+  else result.resume = resume;
+  return result;
 }
 
 // Human-readable command: quote only arguments that need it.

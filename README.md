@@ -8,7 +8,7 @@ sharechat switch codex
 
 它会找到当前目录最近的一次会话（来自任意其他 agent），转成 Codex 自己的会话格式，然后执行 `codex resume <新会话ID>`。Codex 打开后，之前的每一轮对话都是真实的历史消息，可以直接接着聊。
 
-支持 Claude Code、Codex、Qwen Code、Gemini CLI、OpenCode、Grok Build。会话转换核心零依赖，Node.js ≥ 22.15。
+来源支持 Claude Code、Codex CLI、ChatGPT 桌面版、Cursor、WorkBuddy、Qwen Code、Gemini CLI、OpenCode 和 Grok Build；这些目标都支持原生历史写入，包括 WorkBuddy、ChatGPT 桌面版和 Qoder（Qoder 仅作为目标）。Codex 会话按来源分开：CLI 会话归 Codex，ChatGPT 桌面版的 Codex 会话单独归 ChatGPT 桌面版。会话转换核心零依赖，Node.js ≥ 22.15。
 
 ## 安装
 
@@ -27,7 +27,20 @@ npm run desktop
 
 顶部可切换「会话接续 / 终端矩阵」。会话接续保留三栏：来源和项目筛选、会话列表、内容预览及接续面板。选中会话并转换后，会在 sharechat 内置的终端矩阵里创建新终端，执行目标 Agent 的 resume 命令。也可以取消「转换后在内置终端中打开」，只转换并复制命令。
 
+ChatGPT 桌面版（OpenAI.Codex 商店应用）的会话单独列在「ChatGPT 桌面版」来源下，不会混进 Codex CLI；点击会话默认用 `codex://threads/<id>` 在原 App 中打开。也可以把其他 agent 的会话转换到它：写入 Codex rollout（originator 为 `Codex Desktop`）后用同一个深链打开，桌面版会自动索引。
+
 终端矩阵支持多终端并行、标签页、Git 分支、SSH、皮肤、字符动效及设置抽屉。切回会话接续时，终端进程继续运行；关闭 sharechat 窗口会释放内置终端和 SSH 连接。历史会话扫描在后台线程完成。终端源码来自 terminal 项目，详见 `modules/terminal/UPSTREAM.md`。
+
+WorkBuddy 作为来源和目标接入：直接读取本机 WorkBuddy 桌面端的 `~/.workbuddy/workbuddy.db`（标题、目录、模型）和 `projects/<project>/<id>.jsonl`（对话、工具调用），不需要登录 WorkBuddy 开放平台或填写 Client ID/Secret。
+
+转换到 WorkBuddy 时会把历史写入它的本地会话数据库和 JSONL，再自动启动 WorkBuddy，在会话列表里选择标题以「（来自 XX）」结尾的会话继续聊。写入使用本机最近一个 WorkBuddy 会话作模板，并：
+
+- **转换前必须完全退出 WorkBuddy（包括托盘进程）**，否则 WorkBuddy 会用内存数据覆盖写入。
+- 转换前自动备份数据库到 `~/.sharechat/backups/workbuddy/`，保留最近 3 份。
+- 这是 WorkBuddy 的私有格式，WorkBuddy 升级后可能需要重新适配。
+- 数据目录可用 `WORKBUDDY_HOME` 覆盖。
+
+Windows 内置终端默认设置 `OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true`，规避本机复现的 OpenCode 1.18.23 / 1.19.3 普通界面启动即退出问题。保留完整交互界面，但关闭 OpenCode 对外部文件变化的实时监听。若上游版本已修复，可在启动 sharechat 前显式设为 `false` 恢复监听；其他 Agent 和非 Windows 平台不受此设置影响。
 
 ```bash
 npm start       # 启动整合后的 sharechat
@@ -53,15 +66,22 @@ sharechat handoff codex:01a116 --to claude   # 转换任意会话，在原会话
 
 ## 切换方式
 
+选中会话后，目标默认就是来源 agent 自己：点「继续此会话」直接原生续聊（`claude --resume`、`codex resume`、`qwen --resume` 等），不转换、不新建会话文件；也可以改选其他 agent 走转换。目标为 Claude Code 时，可以勾选「Claude Code 全权限」，启动命令会追加 `--dangerously-skip-permissions`。WorkBuddy 没有命令行续聊命令，因此不支持自接续。
+
+启动 Claude Code 前会检查当前出口 IP：中国大陆（CN）或无法确认地区时禁止启动。检查覆盖 CLI 的 `handoff` / `switch`、桌面端会话接续和内置终端启动台；`--no-launch` 或只生成命令不检查，在终端里手动输入 `claude` 也不受此限制。出口 IP 由 Cloudflare / ipinfo 探测，使用代理时以实际出口为准。
+
 | 目标 | 方式 | 打开命令 |
 | --- | --- | --- |
 | Codex | 原生会话：`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | `codex resume <id>` |
+| ChatGPT 桌面版 | Codex rollout，`originator` 写为 `Codex Desktop` | `codex://threads/<id>`，自动打开桌面版并索引 |
+| Qoder（桌面端） | `~/.qoder/projects/<project>/<id>.jsonl`，并写入 Qoder `main.sqlite` 的会话索引和消息投影 | 转换后打开 Qoder；若 Qoder 已运行，重启后在新项目工作区侧栏可见 |
 | Claude Code | 原生会话：`~/.claude/projects/<cwd>/<id>.jsonl` | `claude --resume <id>` |
 | Qwen Code | 原生会话：`~/.qwen/projects/<cwd>/chats/<id>.jsonl` | `qwen --resume <id>` |
 | Gemini CLI | 原生会话：`~/.gemini/tmp/<project>/chats/session-*.jsonl` | `gemini --resume <id>` |
 | OpenCode | 官方 `opencode import`，导入 `opencode export` 格式的 JSON | `opencode --session <id>` |
 | Grok Build | 原生会话目录：`~/.grok/sessions/<cwd>/<id>/`（`chat_history.jsonl`、`updates.jsonl`、`summary.json`） | `grok --resume <id>` |
 | Cursor（桌面端） | 写入 Cursor 全局数据库 `state.vscdb`：会话头、界面消息、模型历史 | `cursor <项目目录>`，在右侧 Agents 列表里打开 |
+| WorkBuddy（桌面端） | 写入 `workbuddy.db` 会话行和 `projects/<cwd>/<id>.jsonl`，使用本机最近会话作模板 | 转换后自动启动 WorkBuddy，在会话列表打开新会话（需先完全退出 WorkBuddy） |
 
 OpenCode 续聊用的模型：如果你最近用过的模型还在 `opencode models` 列表里，就继续用它；否则优先选你自己配置的服务商，不用 OpenCode 的免费模型。也可以用 `--model 服务商/模型` 指定。
 

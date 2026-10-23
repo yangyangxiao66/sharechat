@@ -17,6 +17,11 @@ const LAUNCHPAD_AGENTS = Object.freeze([
 
 const MAX_EXTRA_ARGS_LENGTH = 512;
 
+/** 各 Agent 的「全权限 / 跳过确认」启动参数；未列出的 Agent 不支持该开关。 */
+const SKIP_PERMISSION_FLAGS = Object.freeze({
+  claude: "--dangerously-skip-permissions",
+});
+
 function launchpadAgent(agentId) {
   const id = String(agentId || "").toLowerCase();
   const agent = LAUNCHPAD_AGENTS.find((item) => item.id === id);
@@ -51,10 +56,18 @@ function sanitizeExtraArgs(value) {
   return text;
 }
 
-function buildLaunchCommand(agentId, extraArgs) {
+function skipPermissionFlagFor(agentId) {
+  return SKIP_PERMISSION_FLAGS[launchpadAgent(agentId).id] || "";
+}
+
+function buildLaunchCommand(agentId, extraArgs, options = {}) {
   const agent = launchpadAgent(agentId);
   const args = sanitizeExtraArgs(extraArgs);
-  return args ? `${agent.command} ${args}` : agent.command;
+  const skipFlag = options.skipPermissions === true ? skipPermissionFlagFor(agent.id) : "";
+  const parts = [agent.command];
+  if (skipFlag && !args.includes(skipFlag)) parts.push(skipFlag);
+  if (args) parts.push(args);
+  return parts.join(" ");
 }
 
 function buildInstallCommand(agentId) {
@@ -115,4 +128,5 @@ module.exports = {
   launchpadAgent,
   listLaunchpadAgents,
   sanitizeExtraArgs,
+  skipPermissionFlagFor,
 };

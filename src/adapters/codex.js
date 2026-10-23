@@ -25,6 +25,12 @@ function threadNames() {
 
 const isRollout = (name) => /^rollout-.*\.jsonl(\.zst)?$/.test(name);
 
+// Codex Desktop (the ChatGPT desktop app) writes the same rollout format into
+// CODEX_HOME; keep it as a separate source instead of mixing it into the CLI.
+export function isDesktopSession(meta) {
+  return /desktop/i.test(String(meta.originator || ''));
+}
+
 // Harness-injected user messages (environment, AGENTS.md, permissions...) are
 // a single XML-ish block or a known heading.
 function realUserText(text) {
@@ -46,7 +52,7 @@ function outputText(out) {
   return toText(out);
 }
 
-export function list() {
+export function allSessions() {
   const names = threadNames();
   const files = [
     ...walkFiles(path.join(root(), 'sessions'), isRollout),
@@ -62,8 +68,15 @@ export function list() {
       title: names.get(sid) || '',
       createdAt: meta.timestamp || null,
       updatedAt: mtime(file),
+      originator: meta.originator || '',
+      threadSource: meta.thread_source || '',
+      desktop: isDesktopSession(meta),
     };
   });
+}
+
+export function list() {
+  return allSessions().filter((s) => !s.desktop);
 }
 
 export function load(meta) {

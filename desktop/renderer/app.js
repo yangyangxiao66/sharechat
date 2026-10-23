@@ -1,7 +1,7 @@
 const api = window.sharechat;
 const $ = (id) => document.getElementById(id);
 
-const GLYPH = { claude: 'C', codex: 'X', cursor: 'Cu', grok: 'G', qwen: 'Q', gemini: 'Ge', opencode: 'O' };
+const GLYPH = { claude: 'C', codex: 'X', chatgpt: 'D', cursor: 'Cu', workbuddy: 'W', grok: 'G', qwen: 'Q', gemini: 'Ge', opencode: 'O', qoder: 'Qd' };
 const state = {
   agents: [],
   sessions: [],
@@ -14,6 +14,8 @@ const state = {
   target: null,
   loadToken: 0,
 };
+
+const SKIP_PERMS_KEY = 'sharechat-claude-skip-permissions';
 
 document.body.classList.add(`platform-${api.platform}`);
 
@@ -164,17 +166,49 @@ function renderHead(meta, detail) {
 
 function renderTargets() {
   const src = state.selected?.agent;
-  const targets = state.agents.filter((a) => a.canTarget);
-  $('targets').innerHTML = targets.map((a) => `
+  const targets = state.agents.filter((a) => a.canTarget || (a.id === src && a.canSelfResume));
+  $('targets').innerHTML = targets.map((a) => {
+    const self = a.id === src;
+    const selfResumable = !self || a.canSelfResume !== false;
+    const sub = self
+      ? selfResumable ? '继续此会话' : '当前来源'
+      : a.id === 'chatgpt' ? '桌面版接续' : a.detected === false ? '未检测到安装' : '原生续聊';
+    return `
     <button class="target a-${a.id}" role="radio" data-target="${a.id}"
-      aria-checked="${state.target === a.id}" ${a.id === src ? 'disabled title="这就是当前会话所在的 agent"' : ''}>
+      aria-checked="${state.target === a.id}" ${selfResumable ? '' : 'disabled title="这个 agent 只能作为会话来源"'}>
       ${glyph(a.id, 'lg')}
-      <span><div class="t-name">${esc(a.label)}</div><div class="t-sub">${a.id === src ? '当前来源' : a.detected === false ? '未检测到安装' : '原生续聊'}</div></span>
-    </button>`).join('');
+      <span><div class="t-name">${esc(a.label)}</div><div class="t-sub">${sub}</div></span>
+    </button>`;
+  }).join('');
   const btn = $('convert');
   btn.disabled = !state.target || !state.detail;
-  $('convert-label').textContent = state.target ? `转换到 ${labelOf(state.target)}` : '选择目标';
-  $('model-row').hidden = state.target !== 'opencode';
+  const targetAgent = state.agents.find((a) => a.id === state.target);
+  const self = Boolean(state.target) && state.target === src && targetAgent?.canSelfResume !== false;
+  $('convert-label').textContent = state.target
+    ? self ? '继续此会话' : `转换到 ${labelOf(state.target)}`
+    : '选择目标';
+  $('model-row').hidden = state.target !== 'opencode' || self;
+  const skipRow = $('skip-perms-row');
+  if (skipRow) skipRow.hidden = state.target !== 'claude';
+  const launchLabel = $('launch-label');
+  const relayHint = $('relay-hint');
+  if (state.target === 'workbuddy') {
+    if (launchLabel) launchLabel.textContent = '转换后启动 WorkBuddy';
+    if (relayHint) relayHint.textContent = '写入 WorkBuddy 本地会话；请先完全退出 WorkBuddy，转换后会自动启动';
+  } else if (self) {
+    const desktopApp = state.target === 'chatgpt';
+    if (launchLabel) launchLabel.textContent = desktopApp ? '在 ChatGPT 桌面版中打开' : '在内置终端中打开';
+    if (relayHint) relayHint.textContent = desktopApp ? '交给 ChatGPT 桌面版打开原会话' : '直接恢复原会话，不写入新文件';
+  } else if (state.target === 'chatgpt') {
+    if (launchLabel) launchLabel.textContent = '转换后启动 ChatGPT 桌面版';
+    if (relayHint) relayHint.textContent = '写入 ChatGPT 桌面版会话格式，转换后自动打开';
+  } else if (state.target === 'qoder') {
+    if (launchLabel) launchLabel.textContent = '转换后打开 Qoder';
+    if (relayHint) relayHint.textContent = '写入 Qoder 会话；若 Qoder 已打开，侧栏可能需要重启后显示';
+  } else {
+    if (launchLabel) launchLabel.textContent = '转换后在内置终端中打开';
+    if (relayHint) relayHint.textContent = '写入目标 agent 自己的会话格式，历史就是真实的对话';
+  }
 }
 
 function renderTranscript(detail) {
@@ -205,7 +239,8 @@ function renderTranscript(detail) {
 async function select(meta) {
   state.selected = meta;
   state.detail = null;
-  state.target = state.target === meta.agent ? null : state.target;
+  const ownAgent = state.agents.find((a) => a.id === meta.agent);
+  state.target = ownAgent && ownAgent.canSelfResume !== false ? meta.agent : null;
   $('empty').hidden = true;
   $('detail-body').hidden = false;
   $('result').hidden = true;
@@ -233,36 +268,80 @@ async function select(meta) {
 async function convert() {
   const meta = state.selected;
   if (!meta || !state.target) return;
+  const isSelf = state.target === meta.agent;
   const btn = $('convert');
   btn.disabled = true;
   btn.classList.add('busy');
-  $('convert-label').textContent = '正在转换…';
+  $('convert-label').textContent = isSelf ? '正在打开…' : '正在转换…';
   const launch = $('opt-launch').checked;
+  const skipPermissions = state.target === 'claude' && $('opt-skip-perms')?.checked === true;
   const res = $('result');
   try {
-    const r = await api.convert({ meta, target: state.target, model: $('opt-model').value, launch });
+    const r = await api.convert({
+      meta,
+      target: state.target,
+      model: $('opt-model').value,
+      launch,
+      skipPermissions,
+    });
+    const targetLabel = labelOf(r.target);
     res.className = 'result';
+    if (r.native) {
+      const external = Boolean(r.openUrl);
+      const title = external
+        ? launch ? `已在 ${esc(targetLabel)} 中打开会话` : `已生成 ${esc(targetLabel)} 会话链接`
+        : launch ? `已继续 ${esc(targetLabel)} 原生会话` : `已生成 ${esc(targetLabel)} 原生续聊命令`;
+      res.innerHTML = `
+        <div class="result-title">
+          <svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"></path></svg>
+          ${title}
+        </div>
+        <div>${external ? '由桌面版直接打开原会话' : '直接恢复原会话，未写入新文件'} · 工作目录 <code>${esc(r.cwd)}</code></div>
+        <div class="cmd"><code>${esc(r.command)}</code><button class="mini-btn" data-copy="${esc(r.command)}">复制${external ? '链接' : ''}</button></div>
+        ${external ? '' : `<div class="result-actions">
+          <button class="mini-btn" data-copy="${esc(`cd "${r.cwd}" && ${r.command}`)}">复制完整命令</button>
+        </div>`}`;
+      if (r.launchError) {
+        const warning = document.createElement('p');
+        warning.textContent = `会话启动失败：${r.launchError}`;
+        res.appendChild(warning);
+      }
+      toast(r.launchError
+        ? '会话已就绪，请检查启动提示'
+        : external
+          ? launch ? `已在 ${targetLabel} 中打开会话` : '已生成会话链接'
+          : launch ? `已在 ${targetLabel} 中继续会话` : '已生成续聊命令');
+      return;
+    }
+    const isWorkBuddy = r.target === 'workbuddy';
+    const isChatGPT = r.target === 'chatgpt';
+    const isQoder = r.target === 'qoder';
+    const opening = launch
+      ? isWorkBuddy ? '，正在启动 WorkBuddy' : isChatGPT ? '，正在 ChatGPT 桌面版中打开' : isQoder ? '，正在打开 Qoder' : '，正在新终端中打开'
+      : '';
     res.innerHTML = `
       <div class="result-title">
         <svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"></path></svg>
-        已转换为 ${esc(labelOf(r.target))} 会话${launch ? '，正在新终端中打开' : ''}
+        已转换为 ${esc(targetLabel)} 会话${opening}
       </div>
       <div>共 ${r.messages} 条消息 · 工作目录 <code>${esc(r.cwd)}</code></div>
-      <div class="cmd"><code>${esc(r.command)}</code><button class="mini-btn" data-copy="${esc(r.command)}">复制</button></div>
+      ${isWorkBuddy ? `<div>打开 WorkBuddy 后，在会话列表中选择「${esc(r.title)}（来自 ${esc(labelOf(meta.agent))}）」。</div>` : ''}
+      ${isQoder ? '<div>若 Qoder 已打开，重启 Qoder 后新会话会出现在对应工作区的侧栏。</div>' : ''}
+      <div class="cmd"><code>${esc(isWorkBuddy ? `WorkBuddy 会话 ${r.sessionId}` : r.command)}</code><button class="mini-btn" data-copy="${esc(isWorkBuddy ? r.sessionId : r.command)}">${isWorkBuddy ? '复制 ID' : isChatGPT ? '复制链接' : '复制'}</button></div>
       <div class="result-actions">
         ${r.file && !String(r.file).startsWith('opencode:') ? `<button class="mini-btn" data-reveal="${esc(r.file)}">在文件夹中显示</button>` : ''}
-        <button class="mini-btn" data-copy="${esc(`cd "${r.cwd}" && ${r.command}`)}">复制完整命令</button>
+        ${isWorkBuddy || isChatGPT ? '' : `<button class="mini-btn" data-copy="${esc(`cd "${r.cwd}" && ${r.command}`)}">复制完整命令</button>`}
       </div>`;
     if (r.launchError) {
       const warning = document.createElement('p');
-      warning.textContent = `会话已转换，但终端启动失败：${r.launchError}。可复制上方命令重试。`;
+      warning.textContent = `会话已转换，但${isWorkBuddy ? ' WorkBuddy 启动' : isChatGPT ? ' ChatGPT 桌面版启动' : isQoder ? ' Qoder 启动' : '终端启动'}失败：${r.launchError}`;
       res.appendChild(warning);
     }
-    toast(r.launchError ? '会话已转换，请检查终端启动提示' : `已转换到 ${labelOf(r.target)}`);
+    toast(r.launchError ? '会话已转换，请检查启动提示' : `已转换到 ${targetLabel}`);
     refresh({ keepSelection: true });
   } catch (e) {
     res.className = 'result error';
-    res.innerHTML = `<div class="result-title">转换失败</div>${esc(e.message)}`;
+    res.innerHTML = `<div class="result-title">${isSelf ? '继续会话失败' : '转换失败'}</div>${esc(e.message)}`;
   } finally {
     res.hidden = false;
     btn.classList.remove('busy');
@@ -338,6 +417,12 @@ document.addEventListener('click', (e) => {
 $('convert').addEventListener('click', convert);
 $('refresh').addEventListener('click', () => refresh({ keepSelection: true }));
 $('search').addEventListener('input', (e) => { state.query = e.target.value; renderList(); });
+
+const skipPerms = $('opt-skip-perms');
+try { skipPerms.checked = localStorage.getItem(SKIP_PERMS_KEY) === '1'; } catch { /* ignore */ }
+skipPerms.addEventListener('change', () => {
+  try { localStorage.setItem(SKIP_PERMS_KEY, skipPerms.checked ? '1' : '0'); } catch { /* ignore */ }
+});
 
 document.addEventListener('keydown', (e) => {
   if (document.body.dataset.view !== 'sessions') return;
