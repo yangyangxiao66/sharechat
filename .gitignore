@@ -2,4 +2,7 @@ node_modules/
 .env
 .qa/
 *.log
-
+dist/
+dist-build/
+release/
+release-build/

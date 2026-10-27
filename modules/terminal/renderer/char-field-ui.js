@@ -6,7 +6,7 @@
   if (typeof CharField === "undefined") return;
 
   const STORAGE_KEY = "terminal-deck-char-field";
-  const DEFAULTS = { enabled: true, scope: "welcome", intensity: "mid", effect: "drift", heartTint: "pink" };
+  const DEFAULTS = { enabled: true, scope: "all", intensity: "mid", effect: "auto", heartTint: "pink" };
   const FX = typeof CharFieldEffects !== "undefined" ? CharFieldEffects : null;
 
   function loadSettings() {
@@ -14,7 +14,7 @@
       const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
       return {
         enabled: raw.enabled !== false,
-        scope: raw.scope === "all" ? "all" : "welcome",
+        scope: raw.scope === "welcome" ? "welcome" : "all",
         intensity: CharField.PRESETS[raw.intensity] ? raw.intensity : DEFAULTS.intensity,
         effect: FX && FX.isEffectId(raw.effect) ? raw.effect : DEFAULTS.effect,
         heartTint: raw.heartTint === "accent" ? "accent" : "pink",
@@ -155,13 +155,13 @@
   });
 
   scopeSelect?.addEventListener("change", () => {
-    settings.scope = scopeSelect.value === "all" ? "all" : "welcome";
+    settings.scope = scopeSelect.value === "welcome" ? "welcome" : "all";
     saveSettings();
     sync();
   });
 
   effectSelect?.addEventListener("change", () => {
-    settings.effect = FX && FX.isEffectId(effectSelect.value) ? effectSelect.value : "drift";
+    settings.effect = FX && FX.isEffectId(effectSelect.value) ? effectSelect.value : DEFAULTS.effect;
     welcomeField?.setEffect(settings.effect);
     terminalField?.setEffect(settings.effect);
     saveSettings();

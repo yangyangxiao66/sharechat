@@ -46,7 +46,14 @@ Windows 内置终端默认设置 `OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true
 npm start       # 启动整合后的 sharechat
 npm run check   # 语法检查
 npm test        # 会话格式和接续命令测试
+npm run dist:win        # Windows 便携版
+npm run dist:win:setup  # Windows 安装包
+npm run dist:win:all    # 两者都打
 ```
+
+打包产物输出到 `dist-build/`，不会提交进 Git。便携版是单个
+`sharechat-portable-v<版本>-windows-x64.exe`；安装包是
+`sharechat-setup-v<版本>-windows-x64.exe`。
 
 命令行入口已改名为 `sharechat`，仍保留 `openchat` 命令别名与旧缓存目录兼容。
 

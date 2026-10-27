@@ -2,6 +2,7 @@
   "name": "sharechat",
   "version": "0.1.0",
   "description": "Hand off coding-agent sessions between Claude Code, Codex, Grok, Qwen Code and Gemini CLI",
+  "author": "yangyangxiao66",
   "type": "module",
   "bin": {
     "sharechat": "bin/openchat.js",
@@ -12,7 +13,10 @@
     "desktop": "electron .",
     "start": "electron .",
     "setup": "node node_modules/electron/install.js",
-    "check": "node scripts/check.cjs"
+    "check": "node scripts/check.cjs",
+    "dist:win": "npm run check && electron-builder --win portable --x64",
+    "dist:win:setup": "npm run check && electron-builder --win nsis --x64",
+    "dist:win:all": "npm run check && electron-builder --win nsis portable --x64"
   },
   "engines": {
     "node": ">=22.15"
@@ -26,7 +30,8 @@
     "ssh2": "^1.17.0"
   },
   "devDependencies": {
-    "electron": "43.1.0"
+    "electron": "43.1.0",
+    "electron-builder": "^26.15.3"
   },
   "main": "desktop/main.js"
 }

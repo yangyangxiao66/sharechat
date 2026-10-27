@@ -1,0 +1,38 @@
+{
+  "appId": "io.github.yangyangxiao66.sharechat",
+  "productName": "sharechat",
+  "npmRebuild": false,
+  "compression": "maximum",
+  "electronVersion": "43.1.0",
+  "electronDist": "node_modules/electron/dist",
+  "electronLanguages": ["en-US", "zh-CN"],
+  "directories": {
+    "output": "dist-build"
+  },
+  "files": [
+    "desktop/**/*",
+    "src/**/*",
+    "modules/**/*",
+    "bin/**/*",
+    "package.json"
+  ],
+  "asarUnpack": [
+    "node_modules/node-pty/**"
+  ],
+  "win": {
+    "target": ["portable"],
+    "icon": "desktop/renderer/assets/sharechat.ico"
+  },
+  "nsis": {
+    "artifactName": "sharechat-setup-v${version}-windows-${arch}.${ext}",
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "sharechat",
+    "differentialPackage": false
+  },
+  "portable": {
+    "artifactName": "sharechat-portable-v${version}-windows-${arch}.${ext}"
+  }
+}
